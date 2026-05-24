@@ -1,0 +1,34 @@
+mission:
+  id: meter_digit_voice_verification_mission
+  loop: false
+  stop_on_task_failure: true
+
+waypoints:
+  - name: meter_digit_voice_verification_station
+    description: 跳过导航，调用独立 YOLO 电表数字 service 读取四位数字并用 WAV 播报。
+    frame_id: map
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    skip_navigation: true
+    tasks:
+      - name: wait_before_meter_read
+        type: wait
+        seconds: 2.0
+      - name: read_meter_digits
+        type: read_meter
+        backend: service
+        service_name: /perception/verification/read_printed_number
+        meter_id: meter_digit_voice_verification
+        expected_digits: 4
+        timeout_sec: 30.0
+        service_wait_timeout_sec: 10.0
+        min_confidence: 0.25
+        output_key: meter_reading
+      - name: voice_report_meter_digits
+        type: voice_report
+        backend: command
+        template: 电表当前读数为 {value}
+        command: /home/alex/venom_ws/scripts/speak_meter_wav.sh
+        timeout_sec: 12.0
+        required: true

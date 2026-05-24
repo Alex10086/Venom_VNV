@@ -17,7 +17,8 @@ waypoint tasks
 | Item | Value |
 | --- | --- |
 | class | `ReadMeterTaskPlugin` |
-| file | `venom_mission_commander/task_plugins.py` |
+| plugin entry | `venom_mission_commander/task_plugins.py` |
+| implementation | `venom_mission_commander/read_meter_task.py` |
 | task type | `read_meter` |
 | default output key | `meter_reading` |
 

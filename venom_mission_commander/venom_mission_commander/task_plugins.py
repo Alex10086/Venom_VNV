@@ -1,9 +1,9 @@
 import time
 from typing import Any
 
-import rclpy
-
 from venom_mission_commander.models import TaskContext, TaskExecutionResult, TaskSpec
+from venom_mission_commander.read_meter_task import execute_read_meter_task
+from venom_mission_commander.voice_report_task import execute_voice_report_task
 
 
 class BaseTaskPlugin:
@@ -68,120 +68,14 @@ class ReadMeterTaskPlugin(BaseTaskPlugin):
     task_type = 'read_meter'
 
     def execute(self, context: TaskContext, spec: TaskSpec) -> TaskExecutionResult:
-        backend = str(spec.params.get('backend', 'mock')).strip().lower()
-        if backend == 'service':
-            return self._execute_service(context, spec)
-        if backend not in ('mock', ''):
-            return TaskExecutionResult(False, f'unknown read_meter backend: {backend}')
-
-        meter_id = str(spec.params.get('meter_id', 'meter_1'))
-        delay_sec = float(spec.params.get('mock_delay_sec', 0.5))
-        value = spec.params.get('mock_value', '220.0V')
-        self.node.get_logger().info(f'[MOCK TASK] Reading meter image: {meter_id}')
-        self._sleep(delay_sec)
-
-        reading = {
-            'meter_id': meter_id,
-            'value': value,
-            'confidence': float(spec.params.get('mock_confidence', 0.9)),
-        }
-        context.blackboard['meter_reading'] = reading
-        return TaskExecutionResult(True, f'meter {meter_id}={value}', reading)
-
-    def _execute_service(self, context: TaskContext, spec: TaskSpec) -> TaskExecutionResult:
-        try:
-            from printed_number_interfaces.srv import ReadPrintedNumber
-        except Exception as exc:
-            return TaskExecutionResult(False, f'ReadPrintedNumber import failed: {exc}')
-
-        meter_id = str(spec.params.get('meter_id', 'meter_1'))
-        service_name = str(spec.params.get('service_name', '/perception/read_printed_number'))
-        timeout_sec = float(spec.params.get('timeout_sec', 5.0))
-        if timeout_sec <= 0.0:
-            return TaskExecutionResult(False, 'timeout_sec must be positive for service backend')
-        output_key = str(spec.params.get('output_key', 'meter_reading'))
-        expected_digits = int(spec.params.get('expected_digits', 0))
-        min_confidence = float(spec.params.get('min_confidence', 0.0))
-        service_wait_timeout_sec = min(
-            float(spec.params.get('service_wait_timeout_sec', 1.0)),
-            timeout_sec,
-        )
-
-        client = self.node.create_client(ReadPrintedNumber, service_name)
-        try:
-            start_time = time.monotonic()
-            if not client.wait_for_service(timeout_sec=max(service_wait_timeout_sec, 0.0)):
-                return TaskExecutionResult(False, f'service unavailable: {service_name}')
-            remaining_timeout_sec = timeout_sec - (time.monotonic() - start_time)
-            if remaining_timeout_sec <= 0.0:
-                return TaskExecutionResult(False, f'service wait timeout: {service_name}')
-
-            request = ReadPrintedNumber.Request()
-            request.target_id = meter_id
-            request.timeout_sec = float(remaining_timeout_sec)
-            request.expected_digits = max(expected_digits, 0)
-            request.min_confidence = max(min_confidence, 0.0)
-
-            future = client.call_async(request)
-            deadline = time.monotonic() + max(remaining_timeout_sec, 0.0) + 0.2
-            while rclpy.ok() and not future.done() and time.monotonic() < deadline:
-                rclpy.spin_once(self.node, timeout_sec=0.05)
-
-            if not future.done():
-                return TaskExecutionResult(False, f'read meter service timeout: {service_name}')
-
-            response = future.result()
-            if response is None:
-                return TaskExecutionResult(False, 'read meter service returned no response')
-            if not response.success:
-                return TaskExecutionResult(False, f'read meter failed: {response.message}')
-
-            value = str(response.value)
-            confidence = float(response.confidence)
-            if not value.isdigit():
-                return TaskExecutionResult(False, f'read value is not pure digits: {value}')
-            if expected_digits > 0 and len(value) != expected_digits:
-                return TaskExecutionResult(
-                    False,
-                    f'expected {expected_digits} digits, got {len(value)}',
-                )
-            if confidence < min_confidence:
-                return TaskExecutionResult(
-                    False,
-                    f'confidence {confidence:.3f} below {min_confidence:.3f}',
-                )
-
-            reading = {
-                'meter_id': meter_id,
-                'value': value,
-                'confidence': confidence,
-                'source': 'printed_number_service',
-            }
-            context.blackboard[output_key] = reading
-            return TaskExecutionResult(True, f'meter {meter_id}={value}', reading)
-        except Exception as exc:
-            return TaskExecutionResult(False, f'read meter service error: {exc}')
-        finally:
-            self.node.destroy_client(client)
+        return execute_read_meter_task(self.node, context, spec)
 
 
 class VoiceReportTaskPlugin(BaseTaskPlugin):
     task_type = 'voice_report'
 
     def execute(self, context: TaskContext, spec: TaskSpec) -> TaskExecutionResult:
-        reading = context.blackboard.get('meter_reading', {})
-        default_text = (
-            f"电表 {reading.get('meter_id', 'unknown')} 读数 "
-            f"{reading.get('value', 'unknown')}，执行播报操作"
-        )
-        text = str(spec.params.get('text', default_text))
-        delay_sec = float(spec.params.get('mock_delay_sec', 0.2))
-        self.node.get_logger().info(f'[MOCK TASK] Voice report: {text}')
-        self._sleep(delay_sec)
-
-        report = {'text': text, 'source': 'mock_tts'}
-        context.blackboard['last_voice_report'] = report
-        return TaskExecutionResult(True, 'voice report completed', report)
+        return execute_voice_report_task(self.node, context, spec)
 
 
 class DetectFlameTaskPlugin(BaseTaskPlugin):

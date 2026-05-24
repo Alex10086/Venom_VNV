@@ -26,4 +26,8 @@ waypoints:
         output_key: meter_reading
       - name: voice_report_printed_number
         type: voice_report
-        mock_delay_sec: 0.2
+        backend: command
+        template: 电表当前读数为 {value}
+        command: /home/alex/venom_ws/scripts/speak_meter_wav.sh
+        timeout_sec: 12.0
+        required: false

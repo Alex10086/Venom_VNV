@@ -155,6 +155,8 @@ classify_place
 
 `read_meter` 通过 `/perception/read_printed_number` 接入纸上纯数字识别的用法见 `docs/READ_METER_SERVICE_PLUGIN.md`。
 
+`voice_report` 的 mock / command backend、文本模板和失败策略见 `docs/VOICE_REPORT_PLUGIN.md`。
+
 如果要规划什么时候接仿真、什么时候接真实任务模块、什么时候纳入 `venom_bringup` 和 Docker 默认构建，见 `docs/INTEGRATION_ROADMAP.md`。
 
 - `DetectItemTaskPlugin`

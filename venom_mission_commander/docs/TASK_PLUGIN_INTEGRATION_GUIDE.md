@@ -251,7 +251,7 @@ last_task_data
 | `detected_item` | `detect_item` | `grasp_item` | `{target, confidence, pose_frame, pose_hint 或 pose}` |
 | `grasped_object` | `grasp_item` | `classify_place` | `{source, object, gripper}` |
 | `meter_reading` | `read_meter` | `voice_report` | `{meter_id, value, confidence}` |
-| `last_voice_report` | `voice_report` | 调试/状态记录 | `{text, source}` |
+| `last_voice_report` | `voice_report` | 调试/状态记录 | `{text, success, source, message, duration_sec}` |
 | `flame_detection` | `detect_flame` | `track_flame` | `{class, confidence, bbox 或 pose}` |
 | `last_flame_tracking` | `track_flame` | 调试/状态记录 | `{source, status, steps}` |
 | `last_placement` | `classify_place` | 调试/状态记录 | `{source, category, place_zone, object}` |
@@ -278,7 +278,7 @@ MissionCommander
 | 物品识别 | Service 或 Action | `target`, `timeout_sec`, 可选相机 topic | `success`, `class`, `confidence`, `pose` |
 | 机械臂夹取 | Action | `target_pose` 或 `object_id`, `gripper` | `success`, `error_code`, `final_state` |
 | 电表识别 | Service 或 Action | `meter_id`, 可选图像 topic | `success`, `value`, `confidence` |
-| 语音播报 | Service | `text` | `success`, `message` |
+| 语音播报 | 本地 command（简单）或 Service（扩展） | `text` | `success`, `message` |
 | 火焰检测 | Service 或 Action | 可选图像 topic / target | `success`, `bbox`, `confidence` |
 | 火焰追踪 | Action | `bbox` 或 `target_pose`, `duration` | `success`, `status` |
 | 分类放置 | Action | `object`, `category`, `place_zone` | `success`, `placed_pose` |
