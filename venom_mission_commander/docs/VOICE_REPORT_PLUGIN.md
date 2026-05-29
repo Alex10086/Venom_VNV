@@ -158,7 +158,7 @@ mock 默认链路：
 ```bash
 ros2 run venom_mission_commander mission_commander \
   --ros-args \
-  -p mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/simple_mission.yaml
+  -p mission_config:=/home/venom/venom_ws/src/venom_vnv/venom_mission_commander/config/simple_mission.yaml
 ```
 
 如果本机安装了 `spd-say`，可以在 YAML 中配置 `backend: command` 做临时语音测试；如果只是验证 command backend 的成功路径，也可以临时用 `command: "true"`。

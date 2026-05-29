@@ -169,7 +169,7 @@ tasks:
 
 ```bash
 ros2 run venom_mission_commander mission_commander --ros-args \
-  -p mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/meter_host_report_mission.yaml
+  -p mission_config:=/home/venom/venom_ws/src/venom_vnv/venom_mission_commander/config/meter_host_report_mission.yaml
 ```
 
 ## Troubleshooting

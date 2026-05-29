@@ -142,7 +142,7 @@ ros2 launch printed_number_reader printed_number_reader.launch.py
 
 ```bash
 ros2 run venom_mission_commander mission_commander --ros-args \
-  -p mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/printed_number_service_mission.yaml
+  -p mission_config:=/home/venom/venom_ws/src/venom_vnv/venom_mission_commander/config/printed_number_service_mission.yaml
 ```
 
 预期流程：
@@ -179,7 +179,7 @@ Terminal 2，启动 4 位数字 YOLO：
 
 ```bash
 ros2 run yolo_detector yolo_node --ros-args \
-  -p model_path:=/home/alex/venom_ws/models/yolo/yolo_26_detect_digit.pt \
+  -p model_path:=/home/venom/venom_ws/models/yolo/yolo_26_detect_digit.pt \
   -p image_topic:=/image_raw \
   -p output_topic:=/perception/digit_detections \
   -p annotated_image_topic:=/perception/debug/digit_yolo_result \
@@ -211,7 +211,7 @@ Terminal 5，验证 mission 插件链路：
 
 ```bash
 ros2 run venom_mission_commander mission_commander --ros-args \
-  -p mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/printed_number_service_mission.yaml
+  -p mission_config:=/home/venom/venom_ws/src/venom_vnv/venom_mission_commander/config/printed_number_service_mission.yaml
 ```
 
 ## Notes
