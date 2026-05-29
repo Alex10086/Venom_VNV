@@ -35,6 +35,7 @@ bool success
 string value
 float32 confidence
 string message
+string image_path
 ```
 
 约定：
@@ -42,6 +43,7 @@ string message
 - `value` 必须是纯数字字符串，例如 `"1234"`。
 - `expected_digits=0` 表示不限制位数。
 - 失败时 `success=false`，`message` 给出原因，节点不应因为单次识别失败崩溃。
+- `image_path` 只在 `reader_mode: yolo`、`save_success_image: true`、图像缓存能匹配本次检测 header 且图片成功写盘时填写；它指向本次稳定识别对应的成功图片。图片保存失败不会让 service 读数结果失败，此时 `success=true` 但 `image_path` 为空。
 
 ### Optional YOLO Input
 
@@ -50,6 +52,7 @@ YOLO 模式下订阅：
 | Direction | Topic | Type | Notes |
 | --- | --- | --- | --- |
 | subscribe | `/perception/digit_detections` | `yolo_interfaces/msg/YoloDetections` | 每个框代表一个数字 |
+| subscribe | `/perception/debug/yolo_result` | `sensor_msgs/msg/Image` | 推荐订阅 YOLO 带框图，用于保存成功识别图片 |
 
 每个 detection 需要满足：
 
@@ -82,6 +85,7 @@ YoloDetections
 → 按 bbox.center_x 从左到右排序
 → 拼成 value
 → 校验 expected_digits / stable_frames
+→ 只在 service 成功返回时保存稳定识别对应图片
 → 返回 service response
 ```
 
@@ -91,6 +95,7 @@ YoloDetections
 | --- | --- | --- |
 | `service_name` | `/perception/read_printed_number` | service 名称 |
 | `detections_topic` | `/perception/digit_detections` | YOLO 数字检测输入 |
+| `image_topic` | `/perception/debug/yolo_result` | 成功图片输入，建议用 YOLO 带框图 |
 | `reader_mode` | `mock` | 支持 `mock` / `yolo` |
 | `mock_value` | `"1234"` | mock 模式返回值 |
 | `mock_confidence` | `1.0` | mock 模式置信度 |
@@ -99,7 +104,22 @@ YoloDetections
 | `expected_digits` | `4` | 默认期望数字位数 |
 | `stable_frames` | `1` | 要求相同结果出现的最近帧数 |
 | `max_detection_age_sec` | `1.0` | 缓存检测帧最大有效时长 |
+| `max_image_age_sec` | `2.0` | 可保存图片最大缓存时长 |
 | `poll_interval_sec` | `0.05` | service 等待检测结果的轮询间隔 |
+| `save_success_image` | `true` | 是否保存成功识别图片 |
+| `success_image_dir` | `/tmp/venom_meter_images` | 成功图片保存目录 |
+| `success_image_encoding` | `bgr8` | `cv_bridge` 转换编码 |
+| `success_image_wait_sec` | `0.5` | 等待同 header 图像到达的最长时间 |
+| `image_cache_size` | `10` | 图像缓存帧数 |
+
+成功图片命名示例：
+
+```text
+/tmp/venom_meter_images/meter_2_1234_success.jpg
+/tmp/venom_meter_images/meter_2_latest_success.jpg
+```
+
+其中第一张是本次成功结果文件，第二张是便于人工查看的最新成功图片别名。
 
 ## Build
 
@@ -125,6 +145,8 @@ ros2 launch printed_number_reader printed_number_reader.launch.py
 ros2 run printed_number_reader printed_number_reader_node --ros-args \
   -p reader_mode:=yolo \
   -p detections_topic:=/perception/digit_detections \
+  -p image_topic:=/perception/debug/yolo_result \
+  -p success_image_dir:=/tmp/venom_meter_images \
   -p expected_digits:=4 \
   -p min_confidence:=0.7 \
   -p stable_frames:=1

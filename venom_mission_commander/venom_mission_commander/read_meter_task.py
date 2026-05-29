@@ -184,12 +184,15 @@ def validate_read_printed_number_response(
 
 
 def build_service_reading(config: ReadMeterServiceConfig, response: Any) -> dict[str, Any]:
-    return {
+    reading = {
         'meter_id': config.meter_id,
         'value': str(response.value),
         'confidence': float(response.confidence),
         'source': 'printed_number_service',
     }
+    if hasattr(response, 'image_path') and response.image_path:
+        reading['image_path'] = str(response.image_path)
+    return reading
 
 
 def sleep_non_negative(seconds: float) -> None:

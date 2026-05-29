@@ -1,0 +1,51 @@
+mission:
+  id: meter_digit_voice_host_report_verification_mission
+  loop: false
+  stop_on_task_failure: true
+
+waypoints:
+  - name: meter_digit_voice_host_report_station
+    description: 跳过导航，测试电表数字识别、图像回传和 WAV 语音播报三功能链路。
+    frame_id: map
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    skip_navigation: true
+    kind: operation_stop
+    tasks:
+      - name: wait_for_camera_and_detector
+        type: wait
+        seconds: 2.0
+
+      - name: read_meter_digits
+        type: read_meter
+        backend: service
+        service_name: /perception/verification/read_printed_number
+        meter_id: meter_digit_voice_host_report_verification
+        expected_digits: 4
+        timeout_sec: 30.0
+        service_wait_timeout_sec: 10.0
+        min_confidence: 0.25
+        output_key: meter_reading
+
+      - name: report_meter_image_to_host
+        type: host_report
+        backend: file
+        report_kind: meter_reading
+        reading_key: meter_reading
+        image_path_key: image_path
+        report_dir: /tmp/venom_host_reports
+        required: true
+        timeout_sec: 3.0
+        retry_count: 2
+        retry_backoff_sec: 0.3
+        max_image_bytes: 5242880
+        output_key: last_host_report
+
+      - name: voice_report_meter_digits
+        type: voice_report
+        backend: command
+        template: 电表当前读数为 {value}
+        command: /home/alex/venom_ws/scripts/speak_meter_wav.sh
+        timeout_sec: 12.0
+        required: true

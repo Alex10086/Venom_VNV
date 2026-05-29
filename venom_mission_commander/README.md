@@ -115,16 +115,17 @@ classify_place
 - `TaskPluginRegistry.get(task_type)`：根据 YAML 的 `type` 找到任务插件。
 - `BaseTaskPlugin.execute(context, spec)`：任务插件统一入口。
 
-## 当前 mock 任务插件
+## 当前内置任务插件
 
 - `detect_item`：模拟识别物品，写入 `blackboard["detected_item"]`。
 - `grasp_item`：模拟机械臂夹取，读取 `detected_item`，写入 `blackboard["grasped_object"]`。
-- `read_meter`：模拟电表图像识别，写入 `blackboard["meter_reading"]`。
-- `voice_report`：模拟语音播报，默认读取 `meter_reading`。
+- `read_meter`：支持 `mock` 和 `service` backend；service 模式调用 `ReadPrintedNumber`，写入 `blackboard["meter_reading"]`，并可携带 `image_path`。
+- `host_report`：支持 `mock` 和 `file` backend；file 模式从读表结果解析图片路径，生成 `metadata.json`、图片副本和 `receipt.json`，写入 `blackboard["last_host_report"]`。
+- `voice_report`：支持 `mock` 和 `command` backend；默认读取 `meter_reading`，写入 `blackboard["last_voice_report"]`。
 - `detect_flame`：模拟火焰图片识别，写入 `blackboard["flame_detection"]`。
 - `track_flame`：模拟火焰追踪，读取 `flame_detection`。
 - `classify_place`：模拟分类放置，读取 `grasped_object`。
-- `wait`：模拟等待。
+- `wait`：等待指定时间。
 
 ## 运行、构建与配置
 
@@ -149,11 +150,13 @@ classify_place
 
 ## 后续接真实任务
 
-真实视觉、语音和机械臂接口建议优先替换这些类的内部 mock 方法，而不是改 `MissionCommander` 主流程：
+真实视觉、语音、图片回传和机械臂接口建议优先通过任务插件 backend 或按职责拆分的任务实现文件接入，而不是改 `MissionCommander` 主流程：
 
 完整任务插件接入规范见 `docs/TASK_PLUGIN_INTEGRATION_GUIDE.md`，里面约定了 YAML task 格式、`BaseTaskPlugin` 接口、`TaskContext` / `TaskExecutionResult` 数据结构、`blackboard` key 和 ROS service/action 接入方式。
 
 `read_meter` 通过 `/perception/read_printed_number` 接入纸上纯数字识别的用法见 `docs/READ_METER_SERVICE_PLUGIN.md`。
+
+`host_report` 的 mock / file backend、读数图片回传和失败策略见 `docs/HOST_REPORT_PLUGIN.md`。
 
 `voice_report` 的 mock / command backend、文本模板和失败策略见 `docs/VOICE_REPORT_PLUGIN.md`。
 
@@ -162,6 +165,7 @@ classify_place
 - `DetectItemTaskPlugin`
 - `GraspItemTaskPlugin`
 - `ReadMeterTaskPlugin`
+- `HostReportTaskPlugin`
 - `VoiceReportTaskPlugin`
 - `DetectFlameTaskPlugin`
 - `TrackFlameTaskPlugin`

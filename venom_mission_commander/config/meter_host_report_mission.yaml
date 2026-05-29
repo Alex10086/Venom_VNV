@@ -1,0 +1,51 @@
+mission:
+  id: meter_host_report_mission
+  loop: false
+  stop_on_task_failure: true
+
+waypoints:
+  - name: wp_2_meter
+    description: CRAIC2026 二号作业点：读取电表、回传电表图像、播报读数。
+    frame_id: map
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    skip_navigation: true
+    kind: operation_stop
+    tasks:
+      - name: wait_before_meter_read
+        type: wait
+        seconds: 0.2
+
+      - name: read_meter_at_wp2
+        type: read_meter
+        backend: service
+        service_name: /perception/read_printed_number
+        meter_id: meter_2
+        expected_digits: 4
+        min_confidence: 0.6
+        timeout_sec: 5.0
+        service_wait_timeout_sec: 1.0
+        output_key: meter_reading
+
+      - name: report_meter_image_to_host
+        type: host_report
+        backend: file
+        report_kind: meter_reading
+        reading_key: meter_reading
+        image_path_key: image_path
+        report_dir: /tmp/venom_host_reports
+        required: true
+        timeout_sec: 3.0
+        retry_count: 2
+        retry_backoff_sec: 0.3
+        max_image_bytes: 5242880
+        output_key: last_host_report
+
+      - name: voice_meter_reading
+        type: voice_report
+        backend: command
+        template: 电表 {meter_id} 读数 {value}
+        command: /home/alex/venom_ws/scripts/speak_meter_wav.sh
+        timeout_sec: 12.0
+        required: true

@@ -37,7 +37,7 @@ simulation
 
 ## 阶段 0：原型验证阶段
 
-当前阶段基本处于这里。
+这是早期原型阶段的最低基线。当前仓库已经在保留 mock-first 能力的同时，部分任务链路（读表 service、语音 command、host_report file backend）进入了真实任务模块接入阶段。
 
 ### 应该做什么
 
@@ -110,7 +110,7 @@ simulation
 
 ### 主要改动位置
 
-- `venom_mission_commander/task_plugins.py`
+- `venom_mission_commander/task_plugins.py` 和按职责拆分出的任务实现文件（例如 `read_meter_task.py`、`voice_report_task.py`、`host_report_task.py`）
 - `config/*.yaml` 中对应 task 的参数
 - `package.xml` 中新增真实消息/service/action 包依赖
 - 必要时新增独立插件文件，例如 `real_task_plugins.py`

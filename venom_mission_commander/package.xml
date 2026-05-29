@@ -18,6 +18,9 @@
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
   <exec_depend>printed_number_interfaces</exec_depend>
   <exec_depend>printed_number_reader</exec_depend>
   <exec_depend>v4l2_camera</exec_depend>

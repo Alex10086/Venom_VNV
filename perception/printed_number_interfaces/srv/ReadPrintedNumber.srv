@@ -7,3 +7,4 @@ bool success
 string value
 float32 confidence
 string message
+string image_path

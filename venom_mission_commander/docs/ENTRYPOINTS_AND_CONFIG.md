@@ -4,7 +4,7 @@
 
 ## 入口总览
 
-`venom_mission_commander` 当前只有一个稳定可执行入口：
+`venom_mission_commander` 当前只有一个稳定任务编排入口：
 
 ```bash
 ros2 run venom_mission_commander mission_commander
@@ -17,6 +17,8 @@ mission_commander = venom_mission_commander.mission_commander:main
 ```
 
 所有 launch 文件最终也只是启动这个同一个 ROS 2 node：`MissionCommander`，节点名为 `mission_commander`。
+
+包内还保留了 `latest_image_saver` 这类辅助 executable，但它不是 mission commander 的正式任务编排入口，也不在当前电表识别 + 回传集成 launch 主链路中使用。
 
 | 入口 | 位置 | 用途 | 是否启动 Gazebo/Nav2/RViz |
 | --- | --- | --- | --- |
@@ -360,11 +362,12 @@ waypoints:
 | `name` | 否 | 等于 `type` | task 实例名，用于日志和状态记录 |
 | 其它字段 | 否 | 无 | 全部进入 `TaskSpec.params`，由对应插件解释 |
 
-默认 mock 插件类型包括：
+默认注册的任务插件类型包括：
 
 - `detect_item`
 - `grasp_item`
 - `read_meter`
+- `host_report`
 - `voice_report`
 - `detect_flame`
 - `track_flame`
@@ -378,9 +381,22 @@ waypoints:
 | 文件 | 用途 | 建议定位 |
 | --- | --- | --- |
 | `config/simple_mission.yaml` | mock-first 最小验证路线 | 核心包保留 |
+| `config/printed_number_service_mission.yaml` | 跳过导航，调用 printed number service 读数并播报 | 感知 service 快速验证 |
+| `config/meter_digit_voice_verification_mission.yaml` | 跳过导航，验证 YOLO 数字读取 + WAV 语音播报 | 电表语音链路验证 |
+| `config/meter_digit_voice_host_report_verification_mission.yaml` | 跳过导航，验证 YOLO 数字读取 + 成功图片保存 + host_report 回传 + WAV 语音播报 | 三功能集成验证 |
+| `config/meter_host_report_mission.yaml` | 读取电表、使用 `meter_reading.image_path` 回传图片并播报 | CRAIC2026 二号作业点样例 |
 | `config/rmul_sim_mission.yaml` | RMUL Gazebo/Nav2 仿真路线 | 后续可迁到仿真包 |
 | `config/competition_mission_template.yaml` | 比赛/真机 mission 模板 | 可保留为模板或迁到 bringup 示例 |
 | `config/competition_10x6_mission.yaml` | 10m x 6m 比赛仿真地图近似路线 | 建议视为仿真/实验资产 |
+
+### 电表回传相关 mission 的区别
+
+`meter_digit_voice_host_report_verification_mission.yaml` 和 `meter_host_report_mission.yaml` 的任务顺序都是 `wait -> read_meter -> host_report -> voice_report`，且 `host_report` 都不显式写死 `image_path`，默认使用 `read_meter` 从 `ReadPrintedNumber` response 带回的 `meter_reading.image_path`。主要区别在定位和读表参数：
+
+| 配置 | 定位 | 配套启动方式 | 读表 service | 关键参数 |
+| --- | --- | --- | --- | --- |
+| `config/meter_digit_voice_host_report_verification_mission.yaml` | 三功能联调验证：数字识别、成功图片保存、host 回传、WAV 播报 | 通常配合 `launch/meter_digit_voice_host_report_verification.launch.py` 一键启动 camera、YOLO、`printed_number_reader` 和 commander | `/perception/verification/read_printed_number` | `meter_id: meter_digit_voice_host_report_verification`；等待 2.0s；读表超时 30.0s；service 等待 10.0s；`min_confidence: 0.25`；播报模板 `电表当前读数为 {value}` |
+| `config/meter_host_report_mission.yaml` | CRAIC2026 二号作业点/常规任务样例：读取二号电表、回传图像并播报 | 只描述 mission；假设外部已启动并提供 `/perception/read_printed_number` service | `/perception/read_printed_number` | `meter_id: meter_2`；等待 0.2s；读表超时 5.0s；service 等待 1.0s；`min_confidence: 0.6`；播报模板 `电表 {meter_id} 读数 {value}` |
 
 长期建议：核心包只保留通用示例和 schema 说明；地图、机器人、比赛场地绑定的 mission 放到对应仿真包或 bringup 包。
 

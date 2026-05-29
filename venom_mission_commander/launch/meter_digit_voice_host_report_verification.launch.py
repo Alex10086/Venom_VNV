@@ -1,4 +1,4 @@
-"""Launch the meter digit YOLO reader and WAV voice verification chain."""
+"""Launch camera, YOLO reader, success-image saving, and commander."""
 
 from typing import List
 
@@ -12,14 +12,15 @@ from launch_ros.substitutions import FindPackageShare
 
 
 STABLE_VIDEO_DEVICE = '/dev/v4l/by-id/usb-SunplusIT_Inc_FHD_Webcam_01.00.00-video-index0'  # noqa: E501
+SUCCESS_IMAGE_DIR = '/tmp/venom_meter_images'
 
 
 def generate_launch_description():
-    """Generate launch description for meter digit voice verification."""
+    """Generate launch description for integrated verification."""
     mission_config = PathJoinSubstitution([
         FindPackageShare('venom_mission_commander'),
         'config',
-        'meter_digit_voice_verification_mission.yaml',
+        'meter_digit_voice_host_report_verification_mission.yaml',
     ])
 
     video_device = LaunchConfiguration('video_device')
@@ -36,6 +37,9 @@ def generate_launch_description():
     annotated_image_topic = LaunchConfiguration('annotated_image_topic')
     confidence_threshold = LaunchConfiguration('confidence_threshold')
     yolo_device = LaunchConfiguration('yolo_device')
+
+    success_image_dir = LaunchConfiguration('success_image_dir')
+    success_image_wait_sec = LaunchConfiguration('success_image_wait_sec')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -74,10 +78,12 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument('confidence_threshold', default_value='0.25'),
         DeclareLaunchArgument('yolo_device', default_value='cpu'),
+        DeclareLaunchArgument('success_image_dir', default_value=SUCCESS_IMAGE_DIR),
+        DeclareLaunchArgument('success_image_wait_sec', default_value='0.5'),
         Node(
             package='v4l2_camera',
             executable='v4l2_camera_node',
-            name='meter_voice_verification_camera',
+            name='meter_voice_host_report_camera',
             output='screen',
             ros_arguments=['--log-level', camera_log_level],
             parameters=[{
@@ -95,7 +101,7 @@ def generate_launch_description():
         Node(
             package='yolo_detector',
             executable='yolo_node',
-            name='digit_yolo_meter_voice_verification',
+            name='digit_yolo_meter_voice_host_report_verification',
             output='screen',
             parameters=[{
                 'model_path': model_path,
@@ -113,22 +119,31 @@ def generate_launch_description():
         Node(
             package='printed_number_reader',
             executable='printed_number_reader_node',
-            name='printed_number_reader_meter_voice_verification',
+            name='printed_number_reader_meter_voice_host_report_verification',
             output='screen',
             parameters=[{
                 'reader_mode': 'yolo',
                 'detections_topic': detections_topic,
+                'image_topic': annotated_image_topic,
                 'service_name': '/perception/verification/read_printed_number',
                 'expected_digits': 4,
                 'min_confidence': 0.25,
                 'stable_frames': 1,
                 'max_detection_age_sec': 2.0,
+                'max_image_age_sec': 2.0,
+                'save_success_image': True,
+                'success_image_dir': success_image_dir,
+                'success_image_encoding': 'bgr8',
+                'success_image_wait_sec': ParameterValue(
+                    success_image_wait_sec,
+                    value_type=float,
+                ),
             }],
         ),
         Node(
             package='venom_mission_commander',
             executable='mission_commander',
-            name='mission_commander_meter_voice_verification',
+            name='mission_commander_meter_voice_host_report_verification',
             output='screen',
             parameters=[{
                 'mission_config': mission_config,

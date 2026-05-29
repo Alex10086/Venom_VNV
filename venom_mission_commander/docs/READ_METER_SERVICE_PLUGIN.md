@@ -73,6 +73,7 @@ blackboard["meter_reading"] = {
     "value": "1234",
     "confidence": 1.0,
     "source": "printed_number_service",
+    "image_path": "/tmp/venom_meter_images/meter_1_1234_success.jpg",  # optional
 }
 ```
 
@@ -106,6 +107,7 @@ bool success
 string value
 float32 confidence
 string message
+string image_path
 ```
 
 插件侧会额外校验：
@@ -116,6 +118,7 @@ string message
 - `response.value` 是否为纯数字
 - `expected_digits` 是否匹配
 - `response.confidence` 是否达到 `min_confidence`
+- `response.image_path` 是可选字段；非空时会被带入 `blackboard[output_key]["image_path"]`
 
 任一校验失败都会返回 `TaskExecutionResult(False, message)`。如果 mission 配置了 `stop_on_task_failure: true`，该 waypoint 后续任务不会继续执行。
 
@@ -190,8 +193,11 @@ Terminal 3，启动数字读取 service：
 ros2 run printed_number_reader printed_number_reader_node --ros-args \
   -p reader_mode:=yolo \
   -p detections_topic:=/perception/digit_detections \
+  -p image_topic:=/perception/debug/digit_yolo_result \
   -p expected_digits:=4 \
-  -p min_confidence:=0.25
+  -p min_confidence:=0.25 \
+  -p save_success_image:=true \
+  -p success_image_dir:=/tmp/venom_meter_images
 ```
 
 Terminal 4，直接验证 service：

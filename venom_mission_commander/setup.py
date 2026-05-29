@@ -33,6 +33,7 @@ setup(
     entry_points={
         'console_scripts': [
             'mission_commander = venom_mission_commander.mission_commander:main',
+            'latest_image_saver = venom_mission_commander.latest_image_saver:main',
         ],
     },
 )

@@ -1,6 +1,7 @@
 import time
 from typing import Any
 
+from venom_mission_commander.host_report_task import execute_host_report_task
 from venom_mission_commander.models import TaskContext, TaskExecutionResult, TaskSpec
 from venom_mission_commander.read_meter_task import execute_read_meter_task
 from venom_mission_commander.voice_report_task import execute_voice_report_task
@@ -69,6 +70,13 @@ class ReadMeterTaskPlugin(BaseTaskPlugin):
 
     def execute(self, context: TaskContext, spec: TaskSpec) -> TaskExecutionResult:
         return execute_read_meter_task(self.node, context, spec)
+
+
+class HostReportTaskPlugin(BaseTaskPlugin):
+    task_type = 'host_report'
+
+    def execute(self, context: TaskContext, spec: TaskSpec) -> TaskExecutionResult:
+        return execute_host_report_task(self.node, context, spec)
 
 
 class VoiceReportTaskPlugin(BaseTaskPlugin):
@@ -176,6 +184,7 @@ class TaskPluginRegistry:
             DetectItemTaskPlugin(),
             GraspItemTaskPlugin(),
             ReadMeterTaskPlugin(),
+            HostReportTaskPlugin(),
             VoiceReportTaskPlugin(),
             DetectFlameTaskPlugin(),
             TrackFlameTaskPlugin(),

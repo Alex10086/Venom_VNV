@@ -2,6 +2,7 @@ printed_number_reader:
   ros__parameters:
     service_name: /perception/read_printed_number
     detections_topic: /perception/digit_detections
+    image_topic: /perception/debug/yolo_result
     reader_mode: mock
     mock_value: "1234"
     mock_confidence: 1.0
@@ -10,4 +11,10 @@ printed_number_reader:
     expected_digits: 4
     stable_frames: 1
     max_detection_age_sec: 1.0
+    max_image_age_sec: 2.0
     poll_interval_sec: 0.05
+    save_success_image: true
+    success_image_dir: /tmp/venom_meter_images
+    success_image_encoding: bgr8
+    success_image_wait_sec: 0.5
+    image_cache_size: 10
