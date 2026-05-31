@@ -56,8 +56,10 @@ echo "Bringing up $CAN_IFACE at $CAN_BITRATE bps..."
 sudo ip link set "$CAN_IFACE" down 2>/dev/null || true
 sudo ip link set "$CAN_IFACE" up type can bitrate "$CAN_BITRATE"
 
-# 加载工作空间环境，后续 ros2 命令使用当前编译产物。
+# 加载工作空间环境。colcon 的 setup.bash 会读取未定义变量，需临时关闭 nounset。
+set +u
 source "$WS/install/setup.bash"
+set -u
 
 # 启动原本的 MID360 + Point-LIO 在线里程计入口。
 echo "Starting MID360 + Point-LIO odometry..."
