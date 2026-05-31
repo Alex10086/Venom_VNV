@@ -5,6 +5,8 @@ WS="${VENOM_WS:-$HOME/venom_ws}"
 CAN_IFACE="${CAN_IFACE:-can0}"
 CAN_BITRATE="${CAN_BITRATE:-500000}"
 SLAM_PARAMS="${SLAM_PARAMS:-$WS/src/venom_vnv/venom_bringup/config/sentry/slam_toolbox_mapping.yaml}"
+RVIZ_CONFIG="${RVIZ_CONFIG:-$WS/install/venom_bringup/share/venom_bringup/rviz_cfg/scout_mini_mapping.rviz}"
+HEADLESS="${HEADLESS:-false}"
 
 PIDS=()
 
@@ -95,12 +97,26 @@ echo "Starting slam_toolbox with $SLAM_PARAMS..."
 ros2 launch slam_toolbox online_async_launch.py "slam_params_file:=$SLAM_PARAMS" &
 PIDS+=("$!")
 
+# 有桌面环境时自动打开 RViz；开机无显示环境时可用 HEADLESS=true 跳过。
+if [ "$HEADLESS" != "true" ] && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
+    if [ -f "$RVIZ_CONFIG" ]; then
+        echo "Starting RViz with $RVIZ_CONFIG..."
+        rviz2 -d "$RVIZ_CONFIG" &
+        PIDS+=("$!")
+    else
+        echo "RViz config not found, skipping: $RVIZ_CONFIG" >&2
+    fi
+else
+    echo "No display detected or HEADLESS=true; skipping RViz."
+fi
+
 echo
 echo "Mapping stack is running."
 echo "Check topics with:"
 echo "  ros2 topic hz /scan"
 echo "  ros2 topic hz /map"
 echo "  ros2 run tf2_ros tf2_echo map odom"
+echo "Set HEADLESS=true to run without RViz."
 echo
 echo "Press Ctrl+C to stop all started processes."
 
