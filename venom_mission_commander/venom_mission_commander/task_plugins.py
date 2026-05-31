@@ -1,6 +1,12 @@
 import time
 from typing import Any
 
+from venom_mission_commander.arm_task_client import (
+    as_bool,
+    execute_flame_tracking_task,
+    execute_manipulation_action_task,
+    wait_for_flame_detection_task,
+)
 from venom_mission_commander.host_report_task import execute_host_report_task
 from venom_mission_commander.models import TaskContext, TaskExecutionResult, TaskSpec
 from venom_mission_commander.read_meter_task import execute_read_meter_task
@@ -46,6 +52,18 @@ class GraspItemTaskPlugin(BaseTaskPlugin):
     task_type = 'grasp_item'
 
     def execute(self, context: TaskContext, spec: TaskSpec) -> TaskExecutionResult:
+        backend = str(spec.params.get('backend', 'mock')).strip().lower()
+        if backend in {'action', 'execute_task', 'manipulation'}:
+            return execute_manipulation_action_task(
+                self.node,
+                context,
+                spec,
+                'PICK_AND_PLACE_LATEST_TARGET',
+                'grasped_object',
+            )
+        if backend not in {'mock', ''}:
+            return TaskExecutionResult(False, f'unknown grasp_item backend: {backend}')
+
         source_key = str(spec.params.get('source', 'detected_item'))
         target = context.blackboard.get(source_key)
         if target is None:
@@ -90,6 +108,16 @@ class DetectFlameTaskPlugin(BaseTaskPlugin):
     task_type = 'detect_flame'
 
     def execute(self, context: TaskContext, spec: TaskSpec) -> TaskExecutionResult:
+        backend = str(spec.params.get('backend', 'mock')).strip().lower()
+        if backend == 'topic':
+            result = wait_for_flame_detection_task(self.node, spec.params)
+            if result.success:
+                output_key = str(spec.params.get('output_key', 'flame_detection'))
+                context.blackboard[output_key] = result.data
+            return result
+        if backend not in {'mock', ''}:
+            return TaskExecutionResult(False, f'unknown detect_flame backend: {backend}')
+
         delay_sec = float(spec.params.get('mock_delay_sec', 0.5))
         self.node.get_logger().info('[MOCK TASK] Detecting flame image.')
         self._sleep(delay_sec)
@@ -107,10 +135,18 @@ class TrackFlameTaskPlugin(BaseTaskPlugin):
     task_type = 'track_flame'
 
     def execute(self, context: TaskContext, spec: TaskSpec) -> TaskExecutionResult:
+        backend = str(spec.params.get('backend', 'mock')).strip().lower()
         source_key = str(spec.params.get('source', 'flame_detection'))
+        mode = str(spec.params.get('mode', 'hold')).strip().lower()
+        require_detection = as_bool(spec.params.get('require_detection', mode == 'hold'))
         flame = context.blackboard.get(source_key)
-        if flame is None:
+        if require_detection and flame is None:
             return TaskExecutionResult(False, f'missing flame detection: {source_key}')
+
+        if backend in {'service', 'tracker'}:
+            return execute_flame_tracking_task(self.node, context, spec)
+        if backend not in {'mock', ''}:
+            return TaskExecutionResult(False, f'unknown track_flame backend: {backend}')
 
         steps = int(spec.params.get('mock_tracking_steps', 3))
         step_delay_sec = float(spec.params.get('mock_step_delay_sec', 0.2))
@@ -127,6 +163,18 @@ class ClassifyPlaceTaskPlugin(BaseTaskPlugin):
     task_type = 'classify_place'
 
     def execute(self, context: TaskContext, spec: TaskSpec) -> TaskExecutionResult:
+        backend = str(spec.params.get('backend', 'mock')).strip().lower()
+        if backend in {'action', 'execute_task', 'manipulation'}:
+            return execute_manipulation_action_task(
+                self.node,
+                context,
+                spec,
+                'CLASSIFY_PLATFORM_TO_COLOR_BOXES',
+                'last_placement',
+            )
+        if backend not in {'mock', ''}:
+            return TaskExecutionResult(False, f'unknown classify_place backend: {backend}')
+
         source_key = str(spec.params.get('source', 'grasped_object'))
         grasped_object = context.blackboard.get(source_key)
         if grasped_object is None:

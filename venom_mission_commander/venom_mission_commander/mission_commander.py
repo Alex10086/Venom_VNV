@@ -14,6 +14,7 @@ from venom_mission_commander.status_reporter import MissionStatusReporter
 from venom_mission_commander.startup_checks import StartupChecker
 from venom_mission_commander.task_plugins import TaskPluginRegistry
 from venom_mission_commander.task_runner import WaypointTaskRunner
+from venom_mission_commander.arm_task_client import stop_active_flame_tracking_if_needed
 
 
 class MissionCommander(Node):
@@ -122,6 +123,13 @@ class MissionCommander(Node):
         if self.mission_config is None or self.navigator is None:
             raise RuntimeError('MissionCommander.configure() must be called before run().')
 
+        uses_flame_tracking = self.mission_uses_service_flame_tracking()
+        if uses_flame_tracking:
+            if not self.stop_active_flame_tracking('mission startup', force=True):
+                self.mission_manager.fail('failed to stop flame tracking before mission startup')
+                self.status_reporter.log_snapshot('mission_failed', self.mission_manager)
+                return False
+
         if not self.run_startup_checks():
             return False
 
@@ -136,10 +144,20 @@ class MissionCommander(Node):
             success = self.run_once()
 
             if not success:
+                self.stop_active_flame_tracking('mission failure', force=uses_flame_tracking)
                 self.status_reporter.log_snapshot('mission_failed', self.mission_manager)
                 return False
 
             if not self.mission_config.loop:
+                if not self.stop_active_flame_tracking(
+                    'mission completed',
+                    force=uses_flame_tracking,
+                ):
+                    self.mission_manager.fail(
+                        'failed to stop flame tracking before mission completion'
+                    )
+                    self.status_reporter.log_snapshot('mission_failed', self.mission_manager)
+                    return False
                 self.mission_manager.mark_mission_completed()
                 self.status_reporter.log_snapshot('mission_completed', self.mission_manager)
                 return self.mission_manager.state == MissionState.COMPLETED
@@ -162,6 +180,7 @@ class MissionCommander(Node):
             registry=self.registry,
             navigator=self.navigator,
             navigator_ready_timeout_sec=self.navigator_ready_timeout_sec,
+            node=self,
         )
         results = checker.run()
         result_records = [result.as_dict() for result in results]
@@ -261,6 +280,11 @@ class MissionCommander(Node):
                 last_navigation_attempt=attempt,
             )
             self.status_reporter.log_snapshot('navigation_attempt_failed', self.mission_manager)
+            if not self.stop_active_flame_tracking(
+                'navigation attempt failed',
+                force=self.mission_uses_service_flame_tracking(),
+            ):
+                return False
 
             if attempt < max_attempts:
                 cancel_confirmed = self.navigator.cancel()
@@ -274,13 +298,44 @@ class MissionCommander(Node):
 
     def handle_navigation_failure(self, waypoint: WaypointSpec) -> None:
         cancel_confirmed = self.navigator.cancel()
+        self.stop_active_flame_tracking(
+            'navigation failure',
+            force=self.mission_uses_service_flame_tracking(),
+        )
         self.mission_manager.save_state(
             last_navigation_cancel_confirmed=cancel_confirmed,
             last_navigation_recovery_performed=False,
         )
         self.mission_manager.fail(f'navigation failed at waypoint: {waypoint.name}')
 
+    def stop_active_flame_tracking(self, reason: str, force: bool = False) -> bool:
+        stopped, error = stop_active_flame_tracking_if_needed(
+            self,
+            self.blackboard,
+            reason,
+            force=force,
+        )
+        if not stopped:
+            self.get_logger().error(f'Failed to stop flame tracking ({reason}): {error}')
+        return stopped
+
+    def mission_uses_service_flame_tracking(self) -> bool:
+        if self.mission_config is None:
+            return False
+        for waypoint in self.mission_config.waypoints:
+            for task in waypoint.tasks:
+                if task.task_type != 'track_flame':
+                    continue
+                backend = str(task.params.get('backend', 'mock')).strip().lower()
+                if backend in {'service', 'tracker'}:
+                    return True
+        return False
+
     def shutdown(self) -> None:
+        self.stop_active_flame_tracking(
+            'mission commander shutdown',
+            force=self.mission_uses_service_flame_tracking(),
+        )
         if self.navigator is not None:
             self.navigator.shutdown()
         self.destroy_node()

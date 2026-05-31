@@ -29,17 +29,23 @@ class StartupChecker:
         registry: TaskPluginRegistry,
         navigator: Any,
         navigator_ready_timeout_sec: float,
+        node: Any | None = None,
     ):
         self.mission_config = mission_config
         self.registry = registry
         self.navigator = navigator
         self.navigator_ready_timeout_sec = navigator_ready_timeout_sec
+        self.node = node
 
     def run(self) -> list[StartupCheckResult]:
         results = [
             self.check_mission_config(),
             self.check_task_plugins_registered(),
         ]
+        if all(result.success for result in results):
+            preflight_result = self.check_real_backend_preflight()
+            if preflight_result is not None:
+                results.append(preflight_result)
         if all(result.success for result in results):
             results.append(self.check_navigator_ready())
         return results
@@ -109,6 +115,73 @@ class StartupChecker:
             },
         )
 
+    def check_real_backend_preflight(self) -> StartupCheckResult | None:
+        required_services, required_topics = self._collect_real_backend_requirements()
+        if not required_services and not required_topics:
+            return None
+
+        if self.node is None:
+            return StartupCheckResult(
+                name='real_backend_preflight',
+                success=False,
+                message='node graph inspection unavailable for real backend preflight',
+                data={
+                    'required_services': required_services,
+                    'required_topics': required_topics,
+                    'available_services': [],
+                    'available_topics': [],
+                    'missing_services': required_services,
+                    'missing_topics': required_topics,
+                },
+            )
+
+        if not hasattr(self.node, 'get_service_names_and_types') or not hasattr(
+            self.node,
+            'get_topic_names_and_types',
+        ):
+            return StartupCheckResult(
+                name='real_backend_preflight',
+                success=False,
+                message='node graph inspection unavailable for real backend preflight',
+                data={
+                    'required_services': required_services,
+                    'required_topics': required_topics,
+                    'available_services': [],
+                    'available_topics': [],
+                    'missing_services': required_services,
+                    'missing_topics': required_topics,
+                },
+            )
+
+        available_services = sorted({name for name, _ in self.node.get_service_names_and_types()})
+        available_topics = sorted({name for name, _ in self.node.get_topic_names_and_types()})
+        missing_services = [name for name in required_services if name not in available_services]
+        missing_topics = [name for name in required_topics if name not in available_topics]
+
+        success = not missing_services and not missing_topics
+        message = (
+            'real backend preflight passed'
+            if success
+            else (
+                'missing real backend endpoints: '
+                f'services={", ".join(missing_services) or "none"}; '
+                f'topics={", ".join(missing_topics) or "none"}'
+            )
+        )
+        return StartupCheckResult(
+            name='real_backend_preflight',
+            success=success,
+            message=message,
+            data={
+                'required_services': required_services,
+                'required_topics': required_topics,
+                'available_services': available_services,
+                'available_topics': available_topics,
+                'missing_services': missing_services,
+                'missing_topics': missing_topics,
+            },
+        )
+
     def check_navigator_ready(self) -> StartupCheckResult:
         try:
             if not self._navigator_is_ready():
@@ -143,3 +216,24 @@ class StartupChecker:
             message=message,
             data={'timeout_sec': self.navigator_ready_timeout_sec},
         )
+
+    def _collect_real_backend_requirements(self) -> tuple[list[str], list[str]]:
+        required_services: set[str] = set()
+        required_topics: set[str] = set()
+
+        for waypoint in self.mission_config.waypoints:
+            for task in waypoint.tasks:
+                backend = str(task.params.get('backend', 'mock')).strip().lower()
+                if task.task_type == 'track_flame' and backend in {'service', 'tracker'}:
+                    required_services.add(
+                        str(task.params.get('service_name', '/flame_arm_tracker/set_enabled'))
+                    )
+                    required_topics.add(
+                        str(task.params.get('status_topic', '/flame_arm_tracker/status'))
+                    )
+                elif task.task_type == 'detect_flame' and backend == 'topic':
+                    required_topics.add(
+                        str(task.params.get('detection_topic', '/perception/detections_2d_array'))
+                    )
+
+        return sorted(required_services), sorted(required_topics)

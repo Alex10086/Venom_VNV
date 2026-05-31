@@ -254,10 +254,90 @@ last_task_data
 | `last_host_report` | `host_report` | 调试/状态记录 | `{success, backend, report_kind, report_id, report_dir, metadata_path, receipt_path, image_path, image_sha256, message, duration_sec}` |
 | `last_voice_report` | `voice_report` | 调试/状态记录 | `{text, success, source, message, duration_sec}` |
 | `flame_detection` | `detect_flame` | `track_flame` | `{class, confidence, bbox 或 pose}` |
-| `last_flame_tracking` | `track_flame` | 调试/状态记录 | `{source, status, steps}` |
+| `last_flame_tracking` | `track_flame` | 调试/状态记录 | `{backend, mode, service_name, status_topic, success, message, ready_status?, ready_wait_error?, stop_after_start_failure_success?}` |
+| `flame_tracking_active` | `track_flame` | `grasp_item`, `classify_place`, mission shutdown | `true/false`，表示 `/flame_arm_tracker/set_enabled` 是否可能仍处于 active |
+| `flame_tracking_state` | `track_flame`, mission cleanup | `grasp_item`, `classify_place`, mission shutdown | `inactive/starting/active/stopping/unknown`；`unknown` 必须先停用确认，不能直接执行 MoveIt/MTC action |
+| `flame_tracking_ready` | `track_flame` | 调试/状态记录 | `true/false`，表示最近一次 `mode: start` 是否等到了 tracker ready 状态 |
 | `last_placement` | `classify_place` | 调试/状态记录 | `{source, category, place_zone, object}` |
 
 如果真实模块需要传 `PoseStamped`、图像框、点云目标等 ROS message，建议在 `blackboard` 里放可直接使用的 Python 对象，或者放一个可序列化 dict。长期建议优先用可序列化 dict，方便最终 mission summary、日志和恢复。
+
+## CRAIC 机械臂接入约定
+
+针对 CRAIC 2026 的三类机械臂任务，推荐直接复用当前仓库已经存在的能力边界：
+
+- `grasp_item` → `backend: action` → `/manipulation/execute_task` → `PICK_AND_PLACE_LATEST_TARGET`
+- `classify_place` → `backend: action` → `/manipulation/execute_task` → `CLASSIFY_PLATFORM_TO_COLOR_BOXES`
+- `detect_flame` → `backend: topic` → `/perception/detections_2d_array` → 产出 `flame_detection`
+- `track_flame` → `backend: service` → `/flame_arm_tracker/set_enabled` → 只做对准追踪，不做夹取
+
+`track_flame` 支持三种 service 模式：
+
+- `mode: start`：调用 `SetBool(True)` 开启追踪，`flame_arm_tracker` 在后续导航过程中独立持续对准火焰；移动追踪场景建议设置 `require_detection: false`，因为实时检测由 tracker 自己订阅 `/perception/detections_2d_array`。如果设置 `wait_until_tracking: true`，插件会继续等待 `/flame_arm_tracker/status` 表示 tracker 已进入 ready 状态后才返回成功。启动失败、service 超时或 ready 超时都会进入 `flame_tracking_state: unknown` 并立刻尝试强制关闭。
+- `mode: stop`：调用 `SetBool(False)` 关闭追踪；后续 `grasp_item` / `classify_place` action 前会强制调用一次关闭，即使本地 blackboard 没有 active 标记也不直接相信本地状态，避免多个模块同时控制机械臂。
+- `mode: hold`：保留“开启→等待 `tracking_duration_sec`→按 `disable_on_exit` 关闭”的停车短时追踪语义。
+
+实赛配置必须统一火焰类别名：mission YAML、检测器输出和 `flame_arm_tracker` 的 `target_class_name` 应一致。当前 CRAIC arm mission 使用 `fire`，因此启动 tracker 时也应显式使用 `target_class_name:=fire`。
+
+移动中追踪建议使用下面的 `start` 参数组合：
+
+```yaml
+- name: start_flame_tracking_for_moving_segment
+  type: track_flame
+  backend: service
+  mode: start
+  service_name: /flame_arm_tracker/set_enabled
+  status_topic: /flame_arm_tracker/status
+  wait_until_tracking: true
+  require_target_acquired: true
+  ready_timeout_sec: 4.0
+  target_class: fire
+  require_detection: false
+```
+
+`wait_until_tracking: true` 的 ready 条件来自 `venom_manipulation_interfaces/msg/FlameTrackerStatus`，当前要求：
+
+- `enabled == true`
+- `mode == "tracking"`
+- `target_class_name == target_class`
+- `joint_state_ok == true`
+- `camera_info_ok == true`
+- `command_output_ok == true`
+- 如果 `require_target_acquired: true`，还要求 `target_acquired == true`
+
+这样 `SetBool(True)` 不再被误认为“已经对准”。只有 tracker 完成 observe 过渡、具备相机/关节/命令输出条件，并且按配置确认目标后，mission 才继续进入下一段导航。
+
+`FlameTrackerStatus` 当前字段约定如下：
+
+```text
+std_msgs/Header header
+bool enabled
+string mode
+bool target_acquired
+float32 target_age_sec
+float32 yaw_error_rad
+float32 pitch_error_rad
+bool joint_state_ok
+bool camera_info_ok
+bool command_output_ok
+bool command_saturated
+string target_class_name
+string message
+```
+
+`target_age_sec` 在没有目标时为 `-1.0`。`message` 用于记录当前等待原因或最近状态，例如 waiting joint state、waiting detection、tracking 等。
+
+### 启动预检
+
+`StartupChecker` 会根据 mission YAML 中的真实后端做最小预检：
+
+- `track_flame` 的 `backend: service` / `backend: tracker` 需要能在 ROS graph 中看到 `/flame_arm_tracker/set_enabled`。
+- `track_flame` 还需要能看到 `status_topic`，默认 `/flame_arm_tracker/status`。
+- `detect_flame` 的 `backend: topic` 需要能看到检测 topic，默认 `/perception/detections_2d_array`。
+
+预检只检查接口是否已在 ROS graph 中出现，不保证 tracker 已经 ready 或目标已对准；ready 和目标获取仍由 `track_flame mode: start` 的 status wait 负责。
+
+这样 mission YAML 只负责编排“到点→识别/抓取→开启持续追踪→导航中对准→关闭追踪→分类放置”，复杂的机械臂规划、视觉融合和火焰追踪细节都留在现有的 `piper_mtc_tasks` 与 `flame_arm_tracker` 里，`MissionCommander` 不需要知道底层实现。
 
 ## ROS 消息怎么传
 
@@ -282,7 +362,7 @@ MissionCommander
 | 图像/读数回传 | 本地 file backend（简单）或 Service（扩展） | `reading_key`, `image_path_key`, 可选 `image_path` | `success`, `report_dir`, `metadata_path`, `receipt_path`, `image_path` |
 | 语音播报 | 本地 command（简单）或 Service（扩展） | `text` | `success`, `message` |
 | 火焰检测 | Service 或 Action | 可选图像 topic / target | `success`, `bbox`, `confidence` |
-| 火焰追踪 | Action | `bbox` 或 `target_pose`, `duration` | `success`, `status` |
+| 火焰追踪 | Service + Status Topic（当前）或 Action（长期） | 当前用 `/flame_arm_tracker/set_enabled` 的 `start/stop/hold`，并用 `/flame_arm_tracker/status` 等待 ready；长期可升级为带反馈 Action | 当前返回启停和 ready 状态；长期建议返回 `target_acquired`, `aligned`, `final_error` |
 | 分类放置 | Action | `object`, `category`, `place_zone` | `success`, `placed_pose` |
 
 如果现有模块已经有自己的消息类型，不需要为了 `venom_mission_commander` 改消息。只需要在插件里做适配：
@@ -467,6 +547,7 @@ MissionManager.mark_task_failed()
 - 如果引入新 ROS message/service/action 包，更新 `package.xml`。
 - 在 `TaskPluginRegistry.register_default_plugins()` 注册插件。
 - 在 mission YAML 中增加或修改对应 task。
+- 真实后端要能通过 startup preflight：关键 service/topic/status topic 已经在 ROS graph 中出现。
 - 先用 mock 导航验证插件，再用 Nav2/Gazebo 验证完整流程。
 
 ## 建议保持稳定的边界

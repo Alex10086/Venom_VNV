@@ -1,0 +1,180 @@
+# CRAIC 2026 10 m x 6 m route with real manipulation/flame task backends.
+# Bring up Nav2, perception, piper_mtc_tasks, and flame_arm_tracker before running this mission.
+# flame_arm_tracker must use target_class_name:=fire to match the detector and mission checks.
+map:
+  name: competition_10x6
+  frame_id: map
+  source: rm_nav_bringup/map/competition_10x6.yaml
+  note: Replace x/y/yaw after RViz or field calibration.
+
+mission:
+  id: competition_10x6_arm_mission_commander
+  loop: false
+  stop_on_task_failure: true
+  nav_timeout_sec: 35.0
+  retry_count: 1
+
+waypoints:
+  - name: start_area
+    description: 起停区中心附近；实赛运行前应已完成初始定位。
+    kind: operation_stop
+    frame_id: map
+    x: 1.10
+    y: 1.10
+    yaw: 0.0
+    skip_navigation: true
+    tasks:
+      - name: start_delay
+        type: wait
+        seconds: 0.5
+
+  - name: pass_speed_bump_lower
+    description: 下方减速带中心通过点。
+    kind: pass_through
+    frame_id: map
+    x: 6.00
+    y: 1.50
+    yaw: 0.0
+    nav_timeout_sec: 20.0
+
+  - name: task_point_1_pick
+    description: 一号作业点；由 piper_mtc_tasks 等待视觉目标并抓取。
+    kind: operation_stop
+    frame_id: map
+    x: 7.85
+    y: 1.50
+    yaw: 0.0
+    tasks:
+      - name: grasp_item_at_point_1
+        type: grasp_item
+        backend: action
+        action_name: /manipulation/execute_task
+        task_type_name: PICK_AND_PLACE_LATEST_TARGET
+        timeout_sec: 90.0
+        server_wait_timeout_sec: 3.0
+        retry_count: 1
+        retry_backoff_sec: 0.5
+        output_key: grasped_object
+
+  - name: pass_speed_bump_upper
+    description: 上方减速带中心通过点。
+    kind: pass_through
+    frame_id: map
+    x: 6.00
+    y: 4.50
+    yaw: 0.0
+    nav_timeout_sec: 20.0
+
+  - name: task_point_2_meter_voice
+    description: 二号作业点；电表识别、图像回传和语音播报后，提前开启火焰追踪，随后导航中持续对准。
+    kind: operation_stop
+    frame_id: map
+    x: 7.85
+    y: 4.50
+    yaw: 0.0
+    tasks:
+      - name: read_meter_at_point_2
+        type: read_meter
+        backend: service
+        service_name: /perception/read_printed_number
+        meter_id: competition_meter
+        expected_digits: 4
+        min_confidence: 0.6
+        timeout_sec: 5.0
+        service_wait_timeout_sec: 1.0
+        output_key: meter_reading
+      - name: report_meter_image_to_host
+        type: host_report
+        backend: file
+        report_kind: meter_reading
+        reading_key: meter_reading
+        image_path_key: image_path
+        report_dir: /tmp/venom_host_reports
+        required: true
+        timeout_sec: 3.0
+        retry_count: 2
+        retry_backoff_sec: 0.3
+        max_image_bytes: 5242880
+        output_key: last_host_report
+      - name: voice_report_meter
+        type: voice_report
+        backend: command
+        template: 电表 {meter_id} 读数 {value}
+        command: /home/alex/venom_ws/scripts/speak_meter_wav.sh
+        timeout_sec: 12.0
+        required: true
+      - name: start_flame_tracking_for_moving_segment
+        type: track_flame
+        backend: service
+        mode: start
+        require_detection: false
+        service_name: /flame_arm_tracker/set_enabled
+        status_topic: /flame_arm_tracker/status
+        service_wait_timeout_sec: 1.0
+        wait_until_tracking: true
+        require_target_acquired: true
+        ready_timeout_sec: 4.0
+        target_class: fire
+        timeout_sec: 3.0
+        output_key: last_flame_tracking
+      - name: wait_flame_tracker_observe_pose
+        type: wait
+        seconds: 2.5
+
+  - name: task_point_3_flame_tracking
+    description: 三号作业点；车辆到达前机械臂已持续对准火焰，到点后关闭追踪并确认识别，不执行夹取。
+    kind: operation_stop
+    frame_id: map
+    x: 5.00
+    y: 4.15
+    yaw: 1.5708
+    tasks:
+      - name: stop_flame_tracking_at_point_3
+        type: track_flame
+        backend: service
+        mode: stop
+        service_name: /flame_arm_tracker/set_enabled
+        service_wait_timeout_sec: 1.0
+        timeout_sec: 3.0
+        output_key: last_flame_tracking
+      - name: detect_flame_at_point_3
+        type: detect_flame
+        backend: topic
+        detection_topic: /perception/detections_2d_array
+        target_class: fire
+        min_confidence: 0.45
+        min_consecutive_detections: 1
+        timeout_sec: 5.0
+        output_key: flame_detection
+
+  - name: task_point_4_classify_place
+    description: 四号作业点；由 piper_mtc_tasks 完成平台物体分类投放。
+    kind: operation_stop
+    frame_id: map
+    x: 2.10
+    y: 4.50
+    yaw: 3.1416
+    tasks:
+      - name: classify_and_place_object
+        type: classify_place
+        backend: action
+        action_name: /manipulation/execute_task
+        task_type_name: CLASSIFY_PLATFORM_TO_COLOR_BOXES
+        timeout_sec: 120.0
+        server_wait_timeout_sec: 3.0
+        retry_count: 1
+        retry_backoff_sec: 0.5
+        output_key: last_placement
+
+  - name: return_start_area
+    description: 返回起停区中心附近停车。
+    kind: return_park
+    frame_id: map
+    x: 1.10
+    y: 1.10
+    yaw: 3.1416
+    nav_timeout_sec: 45.0
+    tasks:
+      - name: finish_delay
+        type: wait
+        seconds: 0.5

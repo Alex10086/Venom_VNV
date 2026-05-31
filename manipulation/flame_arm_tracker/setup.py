@@ -13,7 +13,7 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
         (os.path.join("share", package_name, "config"), glob("config/*.yaml")),
-        (os.path.join("share", package_name, "launch"), glob("launch/*.py")),
+        (os.path.join("share", package_name, "launch"), glob("launch/*.py") + glob("launch/*.md")),
         (
             os.path.join("share", package_name, "models", "exp_256_openvino_model"),
             glob("models/exp_256_openvino_model/*"),

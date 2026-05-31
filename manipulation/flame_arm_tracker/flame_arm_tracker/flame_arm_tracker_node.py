@@ -5,9 +5,9 @@ from geometry_msgs.msg import Twist
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, JointState
-from std_msgs.msg import String
+from std_msgs.msg import Header, String
 from std_srvs.srv import SetBool
-from venom_manipulation_interfaces.msg import Detection2D, Detection2DArray
+from venom_manipulation_interfaces.msg import Detection2D, Detection2DArray, FlameTrackerStatus
 
 
 class FlameArmTracker(Node):
@@ -20,6 +20,7 @@ class FlameArmTracker(Node):
         self.declare_parameter("cmd_vel_topic", "/cmd_vel")
         self.declare_parameter("joint_command_topic", "/joint_command")
         self.declare_parameter("debug_topic", "/flame_arm_tracker/debug")
+        self.declare_parameter("status_topic", "/flame_arm_tracker/status")
         self.declare_parameter("target_class_name", "flame_picture")
         self.declare_parameter("command_rate_hz", 30.0)
         self.declare_parameter("tracking_timeout_sec", 0.30)
@@ -166,6 +167,11 @@ class FlameArmTracker(Node):
             str(self.get_parameter("debug_topic").value),
             10,
         )
+        self.status_pub = self.create_publisher(
+            FlameTrackerStatus,
+            str(self.get_parameter("status_topic").value),
+            10,
+        )
         self.create_subscription(
             Detection2DArray,
             str(self.get_parameter("detection_array_topic").value),
@@ -216,8 +222,12 @@ class FlameArmTracker(Node):
         self.filtered_target_time: Optional[rclpy.time.Time] = None
         self.last_status_log_time = self.get_clock().now()
         self.last_debug_publish_time = self.get_clock().now()
+        self.last_status_message = ""
         self.last_yaw_debug = ""
         self.last_pitch_debug = ""
+        self.last_yaw_error_rad = 0.0
+        self.last_pitch_error_rad = 0.0
+        self.last_command_saturated = False
         self.previous_error_time: Optional[rclpy.time.Time] = None
         self.previous_yaw_error = 0.0
         self.previous_pitch_error = 0.0
@@ -230,6 +240,7 @@ class FlameArmTracker(Node):
         self.pitch_deadband_holding = True
 
         self.timer = self.create_timer(1.0 / self.command_rate_hz, self.control_tick)
+        self.status_timer = self.create_timer(0.20, self._publish_status)
         self.get_logger().info("Flame arm tracker ready. Enable with /flame_arm_tracker/set_enabled")
 
     def set_enabled_callback(self, request: SetBool.Request, response: SetBool.Response):
@@ -252,6 +263,7 @@ class FlameArmTracker(Node):
             self._reset_pd_state()
             response.success = True
             response.message = "Flame tracking enabled; moving to observe pose."
+            self.last_status_message = response.message
         else:
             self._publish_hold_current_pose()
             self.enabled = False
@@ -266,6 +278,7 @@ class FlameArmTracker(Node):
             self._reset_pd_state()
             response.success = True
             response.message = "Flame tracking disabled."
+            self.last_status_message = response.message
         return response
 
     def detections_callback(self, message: Detection2DArray) -> None:
@@ -423,6 +436,8 @@ class FlameArmTracker(Node):
         pitch_error = math.atan2(target_y - desired_center_y, camera.k[4])
         yaw_error = self._apply_deadband_hysteresis(yaw_error, "yaw")
         pitch_error = self._apply_deadband_hysteresis(pitch_error, "pitch")
+        self.last_yaw_error_rad = yaw_error
+        self.last_pitch_error_rad = pitch_error
 
         yaw_error_rate, pitch_error_rate = self._filtered_error_rates(yaw_error, pitch_error)
 
@@ -456,6 +471,13 @@ class FlameArmTracker(Node):
             command[5],
             self.pitch_joint6_sign * pitch_delta,
             5,
+        )
+        self.last_command_saturated = any(
+            [
+                abs(command[0] - current[0]) + 1e-9 < abs(yaw_delta),
+                abs(command[4] - current[4]) + 1e-9 < abs(self.pitch_joint5_sign * pitch_delta),
+                abs(command[5] - current[5]) + 1e-9 < abs(self.pitch_joint6_sign * pitch_delta),
+            ]
         )
         self.last_yaw_debug = (
             "age=%.3f predicted=%s cx=%.1f raw_x=%.1f target_x=%.1f "
@@ -809,10 +831,46 @@ class FlameArmTracker(Node):
         return values
 
     def _throttled_status(self, message: str) -> None:
+        self.last_status_message = message
         now = self.get_clock().now()
         if (now - self.last_status_log_time).nanoseconds * 1e-9 > 1.0:
             self.get_logger().info(message)
             self.last_status_log_time = now
+
+    def _publish_status(self) -> None:
+        now = self.get_clock().now()
+        status = FlameTrackerStatus()
+        status.header = Header()
+        status.header.stamp = now.to_msg()
+        status.header.frame_id = "flame_arm_tracker"
+        status.enabled = bool(self.enabled)
+        status.mode = str(self.mode)
+        status.camera_info_ok = self.latest_camera_info is not None
+        status.joint_state_ok = self.latest_joint_state is not None and not self._joint_state_is_stale()
+        status.command_output_ok = self.command_pub.get_subscription_count() > 0
+        status.command_saturated = bool(self.last_command_saturated)
+        status.target_class_name = self.target_class_name
+        status.message = self.last_status_message or f'enabled={status.enabled} mode={status.mode}'
+
+        if self.latest_detection_time is None or self.latest_detection is None:
+            status.target_age_sec = -1.0
+            status.target_acquired = False
+        else:
+            target_age = (now - self.latest_detection_time).nanoseconds * 1e-9
+            status.target_age_sec = float(target_age)
+            detection_class = str(getattr(self.latest_detection, 'class_name', ''))
+            status.target_acquired = (
+                self.enabled
+                and self.mode == "tracking"
+                and detection_class == self.target_class_name
+                and target_age <= self.tracking_timeout_sec
+                and status.camera_info_ok
+                and status.joint_state_ok
+            )
+
+        status.yaw_error_rad = float(self.last_yaw_error_rad)
+        status.pitch_error_rad = float(self.last_pitch_error_rad)
+        self.status_pub.publish(status)
 
     def _publish_debug(self) -> None:
         now = self.get_clock().now()
