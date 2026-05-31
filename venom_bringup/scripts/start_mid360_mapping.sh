@@ -5,7 +5,7 @@ WS="${VENOM_WS:-$HOME/venom_ws}"
 CAN_IFACE="${CAN_IFACE:-can0}"
 CAN_BITRATE="${CAN_BITRATE:-500000}"
 SLAM_PARAMS="${SLAM_PARAMS:-$WS/src/venom_vnv/venom_bringup/config/sentry/slam_toolbox_mapping.yaml}"
-RVIZ_CONFIG="${RVIZ_CONFIG:-$WS/install/venom_bringup/share/venom_bringup/rviz_cfg/scout_mini_mapping.rviz}"
+RVIZ_CONFIG="${RVIZ_CONFIG:-$WS/install/venom_bringup/share/venom_bringup/rviz_cfg/cloud_registered_only.rviz}"
 HEADLESS="${HEADLESS:-false}"
 
 PIDS=()
