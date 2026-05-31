@@ -45,7 +45,6 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'rviz_cfg'), glob('rviz_cfg/*.rviz')),
-        (os.path.join('share', package_name, 'scripts'), glob('scripts/*.sh')),
     ] + collect_launch_data_files() + collect_config_data_files(),
     install_requires=['setuptools'],
     zip_safe=True,
