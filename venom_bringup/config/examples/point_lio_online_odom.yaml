@@ -4,7 +4,7 @@
             operation_mode: "online_odom"
             realtime:
                 max_lidar_queue: 4
-                max_imu_queue: 300
+                max_imu_queue: 2000
             async_map:
                 queue_depth: 1
                 drop_policy: "drop_oldest"
