@@ -133,6 +133,7 @@ def generate_launch_description():
             'range_min': 0.3,
             'range_max': 50.0,
             'use_inf': True,
+            'output_reliable': True,
         }],
         remappings=[
             ('cloud_in', '/cloud_registered'),
@@ -191,7 +192,7 @@ def generate_launch_description():
         package='rviz2',
         executable='rviz2',
         name='rviz2',
-        arguments=['-d', os.path.join(venom_bringup_dir, 'rviz_cfg', 'mapping.rviz')],
+        arguments=['-d', os.path.join(venom_bringup_dir, 'rviz_cfg', 'scout_mini_mapping.rviz')],
         output='screen',
         condition=UnlessCondition(headless)
     )
