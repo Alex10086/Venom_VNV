@@ -1,9 +1,12 @@
 import sys
 from pathlib import Path
+from threading import Thread
 
 import rclpy
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from rcl_interfaces.msg import ParameterDescriptor
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from venom_mission_commander.mission_loader import MissionLoader
@@ -72,10 +75,12 @@ class MissionCommander(Node):
             self.mission_manager,
             self.status_reporter,
         )
+        self.communication_callback_group = ReentrantCallbackGroup()
         self.blackboard = {}
 
         self.mission_config = None
         self.navigator = None
+        self._venom_background_executor_active = False
 
     def configure(self) -> bool:
         config_path = self.get_parameter('mission_config').value
@@ -379,6 +384,11 @@ class MissionCommander(Node):
 def main(args=None) -> None:
     rclpy.init(args=args)
     commander = MissionCommander()
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(commander)
+    commander._venom_background_executor_active = True
+    executor_thread = Thread(target=executor.spin, daemon=True)
+    executor_thread.start()
     exit_code = 1
 
     try:
@@ -391,6 +401,9 @@ def main(args=None) -> None:
     finally:
         commander.status_reporter.log_final_summary(commander.mission_manager)
         commander.shutdown()
+        commander._venom_background_executor_active = False
+        executor.shutdown()
+        executor_thread.join(timeout=2.0)
         rclpy.shutdown()
 
     sys.exit(exit_code)

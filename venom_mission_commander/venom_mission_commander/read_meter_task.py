@@ -4,6 +4,7 @@ from typing import Any
 
 import rclpy
 
+from venom_mission_commander.arm_task_client import communication_callback_group, wait_for_callbacks
 from venom_mission_commander.models import TaskContext, TaskExecutionResult, TaskSpec
 
 
@@ -121,7 +122,11 @@ def call_read_printed_number_service(
     service_type: Any,
     config: ReadMeterServiceConfig,
 ) -> tuple[Any | None, str | None]:
-    client = node.create_client(service_type, config.service_name)
+    client = node.create_client(
+        service_type,
+        config.service_name,
+        callback_group=communication_callback_group(node),
+    )
     try:
         start_time = time.monotonic()
         if not client.wait_for_service(timeout_sec=max(config.service_wait_timeout_sec, 0.0)):
@@ -139,7 +144,7 @@ def call_read_printed_number_service(
         future = client.call_async(request)
         deadline = time.monotonic() + max(remaining_timeout_sec, 0.0) + 0.2
         while rclpy.ok() and not future.done() and time.monotonic() < deadline:
-            rclpy.spin_once(node, timeout_sec=0.05)
+            wait_for_callbacks(node, 0.05)
 
         if not future.done():
             return None, f'read meter service timeout: {config.service_name}'

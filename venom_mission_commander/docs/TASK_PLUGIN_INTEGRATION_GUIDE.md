@@ -4,6 +4,8 @@
 
 核心原则：`MissionCommander` 只负责编排流程，不直接绑定具体业务模块。真实任务模块应通过任务插件接入，保持主流程稳定：
 
+当前实现里，`MissionCommander` 顶层入口使用 `MultiThreadedExecutor`，并向真实 service / action / subscription 复用同一个 `ReentrantCallbackGroup`，这样插件里同步等待 future 时不会把自己的回调卡死。
+
 ```text
 导航到路点
 → 根据 YAML 的 tasks 顺序执行任务插件

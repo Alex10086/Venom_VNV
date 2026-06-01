@@ -171,6 +171,50 @@ class FakeGraphNode(FakeNode):
         return [(name, ['venom_manipulation_interfaces/msg/FlameTrackerStatus']) for name in self.topics]
 
 
+class FakeDoneFuture:
+    def __init__(self, result):
+        self._result = result
+
+    def done(self):
+        return True
+
+    def result(self):
+        return self._result
+
+
+class CallbackGroupNode(FakeNode):
+    def __init__(self, callback_group):
+        super().__init__()
+        self.communication_callback_group = callback_group
+        self.clients = []
+        self.subscriptions = []
+
+    def create_client(self, service_type, service_name, callback_group=None):
+        client = SimpleNamespace(
+            service_type=service_type,
+            service_name=service_name,
+            callback_group=callback_group,
+            wait_for_service=lambda timeout_sec: True,
+            call_async=lambda request: FakeDoneFuture(SimpleNamespace(success=True, message='ok')),
+        )
+        self.clients.append(client)
+        return client
+
+    def create_subscription(self, msg_type, topic, callback, qos, callback_group=None):
+        subscription = SimpleNamespace(
+            msg_type=msg_type,
+            topic=topic,
+            callback=callback,
+            qos=qos,
+            callback_group=callback_group,
+        )
+        self.subscriptions.append(subscription)
+        return subscription
+
+    def destroy_subscription(self, subscription):
+        return None
+
+
 def make_flame_preflight_mission():
     return MissionConfig(
         mission_id='flame_preflight_mission',
@@ -305,6 +349,99 @@ def test_tracker_status_ready_requires_tracking_and_requested_target():
         target_class='fire',
         require_target_acquired=True,
     )
+
+
+def test_arm_task_client_uses_node_callback_group_for_ros_entities(monkeypatch):
+    from venom_mission_commander import arm_task_client
+
+    callback_group = object()
+    node = CallbackGroupNode(callback_group)
+    action_client_calls = []
+
+    fake_interfaces = ModuleType('venom_manipulation_interfaces')
+    fake_action_module = ModuleType('venom_manipulation_interfaces.action')
+    fake_msg_module = ModuleType('venom_manipulation_interfaces.msg')
+    fake_service_module = ModuleType('std_srvs.srv')
+
+    class FakeExecuteTask:
+        class Goal:
+            PICK_AND_PLACE_LATEST_TARGET = 4
+
+            def __init__(self):
+                self.task_type = 0
+
+    class FakeSetBool:
+        class Request:
+            def __init__(self):
+                self.data = False
+
+    class FakeActionClient:
+        def __init__(self, node_arg, action_type, action_name, callback_group=None):
+            action_client_calls.append(
+                {
+                    'node': node_arg,
+                    'action_type': action_type,
+                    'action_name': action_name,
+                    'callback_group': callback_group,
+                }
+            )
+
+        def wait_for_server(self, timeout_sec):
+            return False
+
+    setattr(fake_action_module, 'ExecuteTask', FakeExecuteTask)
+    setattr(fake_msg_module, 'FlameTrackerStatus', type('FlameTrackerStatus', (), {}))
+    setattr(fake_msg_module, 'Detection2DArray', type('Detection2DArray', (), {}))
+    setattr(fake_service_module, 'SetBool', FakeSetBool)
+    monkeypatch.setitem(sys.modules, 'venom_manipulation_interfaces', fake_interfaces)
+    monkeypatch.setitem(sys.modules, 'venom_manipulation_interfaces.action', fake_action_module)
+    monkeypatch.setitem(sys.modules, 'venom_manipulation_interfaces.msg', fake_msg_module)
+    monkeypatch.setitem(sys.modules, 'std_srvs.srv', fake_service_module)
+    monkeypatch.setattr(arm_task_client, 'ActionClient', FakeActionClient)
+    monkeypatch.setattr(arm_task_client, 'ros_ok', lambda: False)
+
+    action_config = arm_task_client.ManipulationActionConfig(
+        action_name='/manipulation/execute_task',
+        task_type_name='PICK_AND_PLACE_LATEST_TARGET',
+        task_type_value=None,
+        timeout_sec=1.0,
+        server_wait_timeout_sec=0.1,
+        retry_count=0,
+        retry_backoff_sec=0.0,
+        output_key='grasped_object',
+    )
+    tracker_config = arm_task_client.FlameTrackingConfig(
+        mode='start',
+        service_name='/flame_arm_tracker/set_enabled',
+        service_wait_timeout_sec=0.1,
+        call_timeout_sec=0.1,
+        tracking_duration_sec=0.0,
+        disable_on_exit=True,
+        output_key='last_flame_tracking',
+        status_topic='/flame_arm_tracker/status',
+        wait_until_tracking=True,
+        require_target_acquired=True,
+        ready_timeout_sec=0.1,
+        target_class='fire',
+    )
+
+    arm_task_client.call_execute_task_action(node, action_config)
+    arm_task_client.call_set_bool_service(
+        node,
+        '/flame_arm_tracker/set_enabled',
+        True,
+        0.1,
+        0.1,
+    )
+    arm_task_client.wait_for_flame_tracker_ready(node, tracker_config)
+    arm_task_client.wait_for_flame_detection_task(node, {'timeout_sec': 0.1})
+
+    assert action_client_calls[0]['callback_group'] is callback_group
+    assert node.clients[0].callback_group is callback_group
+    assert [subscription.callback_group for subscription in node.subscriptions] == [
+        callback_group,
+        callback_group,
+    ]
 
 
 def test_flame_tracking_disables_tracker_when_tracking_wait_fails(monkeypatch):
@@ -659,8 +796,9 @@ def test_execute_task_action_reports_unconfirmed_cancel_after_result_timeout(mon
     goal_handle = FakeGoalHandle()
 
     class FakeActionClient:
-        def __init__(self, node, action_type, action_name):
+        def __init__(self, node, action_type, action_name, callback_group=None):
             self.action_name = action_name
+            self.callback_group = callback_group
 
         def wait_for_server(self, timeout_sec):
             return True
@@ -1056,6 +1194,86 @@ def test_mission_startup_forces_tracker_stop_before_startup_checks(monkeypatch):
         ('stop', 'mission startup', True),
         ('startup_checks',),
     ]
+
+
+def test_main_runs_mission_with_background_multithreaded_executor(monkeypatch):
+    from venom_mission_commander import mission_commander
+
+    events = []
+
+    class FakeSummaryReporter:
+        def log_final_summary(self, mission_manager):
+            events.append(('summary', mission_manager))
+
+    class FakeCommander:
+        def __init__(self):
+            self.status_reporter = FakeSummaryReporter()
+            self.mission_manager = 'mission-manager'
+            self._venom_background_executor_active = False
+
+        def configure(self):
+            events.append(('configure', self._venom_background_executor_active))
+            return True
+
+        def run(self):
+            events.append(('run', self._venom_background_executor_active))
+            return True
+
+        def shutdown(self):
+            events.append(('commander_shutdown', self._venom_background_executor_active))
+
+        def get_logger(self):
+            return FakeLogger()
+
+    commander = FakeCommander()
+
+    class FakeExecutor:
+        def __init__(self, num_threads=None):
+            events.append(('executor_init', num_threads))
+
+        def add_node(self, node):
+            events.append(('executor_add_node', node is commander))
+
+        def spin(self):
+            events.append(('executor_spin', commander._venom_background_executor_active))
+
+        def shutdown(self):
+            events.append(('executor_shutdown', commander._venom_background_executor_active))
+
+    class FakeThread:
+        def __init__(self, target, daemon=False):
+            self.target = target
+            events.append(('thread_init', daemon))
+
+        def start(self):
+            events.append(('thread_start', commander._venom_background_executor_active))
+            self.target()
+
+        def join(self, timeout=None):
+            events.append(('thread_join', timeout))
+
+    monkeypatch.setattr(mission_commander.rclpy, 'init', lambda args=None: events.append(('init', args)))
+    monkeypatch.setattr(mission_commander.rclpy, 'shutdown', lambda: events.append(('rclpy_shutdown',)))
+    monkeypatch.setattr(mission_commander, 'MissionCommander', lambda: commander)
+    monkeypatch.setattr(mission_commander, 'MultiThreadedExecutor', FakeExecutor, raising=False)
+    monkeypatch.setattr(mission_commander, 'Thread', FakeThread, raising=False)
+
+    with pytest.raises(SystemExit) as exc_info:
+        mission_commander.main([])
+
+    assert exc_info.value.code == 0
+    assert events[:5] == [
+        ('init', []),
+        ('executor_init', 4),
+        ('executor_add_node', True),
+        ('thread_init', True),
+        ('thread_start', True),
+    ]
+    assert ('executor_spin', True) in events
+    assert ('run', True) in events
+    assert ('commander_shutdown', True) in events
+    assert ('executor_shutdown', False) in events
+    assert ('rclpy_shutdown',) in events
 
 
 def test_mission_completion_fails_when_tracker_stop_fails(monkeypatch):

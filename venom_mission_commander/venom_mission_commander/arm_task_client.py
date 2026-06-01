@@ -153,13 +153,14 @@ def wait_for_flame_tracker_ready(
         config.status_topic,
         callback,
         10,
+        callback_group=communication_callback_group(node),
     )
     try:
         deadline = time.monotonic() + config.ready_timeout_sec
         while ros_ok() and time.monotonic() < deadline:
             if ready_status is not None:
                 return ready_status, None
-            rclpy.spin_once(node, timeout_sec=0.05)
+            wait_for_callbacks(node, 0.05)
 
         if ready_status is not None:
             return ready_status, None
@@ -263,7 +264,12 @@ def call_execute_task_action(
     except Exception as exc:
         return None, f'ExecuteTask action import failed: {exc}'
 
-    client = ActionClient(node, ExecuteTask, config.action_name)
+    client = ActionClient(
+        node,
+        ExecuteTask,
+        config.action_name,
+        callback_group=communication_callback_group(node),
+    )
     goal_handle = None
     result_future = None
     try:
@@ -369,13 +375,14 @@ def wait_for_flame_detection_task(node: Any, params: dict[str, Any]) -> TaskExec
         config.detection_topic,
         callback,
         10,
+        callback_group=communication_callback_group(node),
     )
     try:
         deadline = time.monotonic() + config.timeout_sec
         while ros_ok() and time.monotonic() < deadline:
             if latest_detection is not None and consecutive_matches >= config.min_consecutive_detections:
                 return TaskExecutionResult(True, 'flame detected', latest_detection)
-            rclpy.spin_once(node, timeout_sec=0.05)
+            wait_for_callbacks(node, 0.05)
         return TaskExecutionResult(
             False,
             f'flame detection timeout on {config.detection_topic}',
@@ -641,7 +648,11 @@ def call_set_bool_service(
     except Exception as exc:
         return None, f'SetBool import failed: {exc}'
 
-    client = node.create_client(SetBool, service_name)
+    client = node.create_client(
+        SetBool,
+        service_name,
+        callback_group=communication_callback_group(node),
+    )
     try:
         if not client.wait_for_service(timeout_sec=service_wait_timeout_sec):
             return None, f'service unavailable: {service_name}'
@@ -749,7 +760,7 @@ def cancel_goal_and_wait(
 def spin_until_future_done(node: Any, future: Any, deadline: float) -> bool:
     while ros_ok() and not future.done() and time.monotonic() < deadline:
         timeout_sec = min(0.05, max(deadline - time.monotonic(), 0.0))
-        rclpy.spin_once(node, timeout_sec=timeout_sec)
+        wait_for_callbacks(node, timeout_sec)
     return future.done()
 
 
@@ -757,7 +768,7 @@ def wait_with_spin(node: Any, seconds: float) -> None:
     deadline = time.monotonic() + max(float(seconds), 0.0)
     while ros_ok() and time.monotonic() < deadline:
         timeout_sec = min(0.05, max(deadline - time.monotonic(), 0.0))
-        rclpy.spin_once(node, timeout_sec=timeout_sec)
+        wait_for_callbacks(node, timeout_sec)
 
 
 def try_cancel_goal(goal_handle: Any, node: Any) -> None:
@@ -803,3 +814,18 @@ def ros_ok() -> bool:
     if ok_function is None:
         return True
     return bool(ok_function())
+
+
+def communication_callback_group(node: Any) -> Any:
+    return getattr(node, 'communication_callback_group', None)
+
+
+def node_uses_background_executor(node: Any) -> bool:
+    return bool(getattr(node, '_venom_background_executor_active', False))
+
+
+def wait_for_callbacks(node: Any, timeout_sec: float) -> None:
+    if node_uses_background_executor(node):
+        time.sleep(max(float(timeout_sec), 0.0))
+        return
+    rclpy.spin_once(node, timeout_sec=max(float(timeout_sec), 0.0))
