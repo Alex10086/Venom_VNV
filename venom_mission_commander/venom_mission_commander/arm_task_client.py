@@ -397,7 +397,7 @@ def parse_flame_detection_config(params: dict[str, Any]) -> FlameDetectionConfig
     if timeout_sec <= 0.0:
         raise ValueError('timeout_sec must be positive')
     return FlameDetectionConfig(
-        detection_topic=str(params.get('detection_topic', '/perception/detections_2d_array')),
+        detection_topic=str(params.get('detection_topic', '/perception/flame/detections_2d_array')),
         target_class=str(params.get('target_class', 'fire')),
         min_confidence=float(params.get('min_confidence', 0.45)),
         min_consecutive_detections=max(1, int(params.get('min_consecutive_detections', 1))),

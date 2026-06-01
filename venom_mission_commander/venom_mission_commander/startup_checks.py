@@ -233,7 +233,11 @@ class StartupChecker:
                     )
                 elif task.task_type == 'detect_flame' and backend == 'topic':
                     required_topics.add(
-                        str(task.params.get('detection_topic', '/perception/detections_2d_array'))
+                        str(
+                            task.params.get(
+                                'detection_topic', '/perception/flame/detections_2d_array'
+                            )
+                        )
                     )
 
         return sorted(required_services), sorted(required_topics)

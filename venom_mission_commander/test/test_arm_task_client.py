@@ -28,6 +28,8 @@ from venom_mission_commander.task_plugins import (
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 VENOM_VNV_DIR = PACKAGE_DIR.parent
 CRAIC_ARM_MISSION_PATH = PACKAGE_DIR / 'config' / 'competition_10x6_arm_mission.yaml'
+VERIFY_POINT3_FLAME_MISSION_PATH = PACKAGE_DIR / 'config' / 'verify_point3_flame_tracking.yaml'
+FLAME_DETECTION_ARRAY_TOPIC = '/perception/flame/detections_2d_array'
 
 
 class FakeLogger:
@@ -245,7 +247,7 @@ def make_flame_preflight_mission():
                         task_type='detect_flame',
                         params={
                             'backend': 'topic',
-                            'detection_topic': '/perception/detections_2d_array',
+                            'detection_topic': FLAME_DETECTION_ARRAY_TOPIC,
                         },
                     ),
                 ],
@@ -302,6 +304,14 @@ def test_best_detection_selects_highest_confidence_matching_class():
         'confidence': 0.82,
         'bbox': [220.0, 130.0, 50.0, 60.0],
     }
+
+
+def test_parse_flame_detection_config_defaults_to_flame_pipeline_topic():
+    from venom_mission_commander.arm_task_client import parse_flame_detection_config
+
+    config = parse_flame_detection_config({})
+
+    assert config.detection_topic == FLAME_DETECTION_ARRAY_TOPIC
 
 
 def test_tracker_status_ready_requires_tracking_and_requested_target():
@@ -657,7 +667,7 @@ def test_startup_checker_preflights_flame_tracking_endpoints():
         navigator_ready_timeout_sec=1.0,
         node=FakeGraphNode(
             services=['/flame_arm_tracker/set_enabled'],
-            topics=['/flame_arm_tracker/status', '/perception/detections_2d_array'],
+            topics=['/flame_arm_tracker/status', FLAME_DETECTION_ARRAY_TOPIC],
         ),
     )
 
@@ -679,7 +689,7 @@ def test_startup_checker_fails_when_flame_tracking_endpoints_are_missing():
         navigator_ready_timeout_sec=1.0,
         node=FakeGraphNode(
             services=[],
-            topics=['/perception/detections_2d_array'],
+            topics=[FLAME_DETECTION_ARRAY_TOPIC],
         ),
     )
 
@@ -691,6 +701,46 @@ def test_startup_checker_fails_when_flame_tracking_endpoints_are_missing():
     assert '/flame_arm_tracker/status' in preflight.message
     assert preflight.data['missing_services'] == ['/flame_arm_tracker/set_enabled']
     assert preflight.data['missing_topics'] == ['/flame_arm_tracker/status']
+
+
+def test_startup_checker_defaults_flame_detection_to_flame_pipeline_topic():
+    from venom_mission_commander.startup_checks import StartupChecker
+
+    mission = MissionConfig(
+        mission_id='default_flame_topic_mission',
+        loop=False,
+        stop_on_task_failure=True,
+        waypoints=[
+            WaypointSpec(
+                name='detect_flame',
+                frame_id='map',
+                x=0.0,
+                y=0.0,
+                yaw=0.0,
+                skip_navigation=True,
+                tasks=[
+                    TaskSpec(
+                        name='detect_flame_at_point_3',
+                        task_type='detect_flame',
+                        params={'backend': 'topic'},
+                    )
+                ],
+            )
+        ],
+    )
+    checker = StartupChecker(
+        mission_config=mission,
+        registry=FakeRegistry(),
+        navigator=FakeReadyNavigator(),
+        navigator_ready_timeout_sec=1.0,
+        node=FakeGraphNode(topics=[FLAME_DETECTION_ARRAY_TOPIC]),
+    )
+
+    results = checker.run()
+    preflight = next(result for result in results if result.name == 'real_backend_preflight')
+
+    assert preflight.success is True
+    assert preflight.data['missing_topics'] == []
 
 
 def test_flame_tracking_start_failure_attempts_forced_stop_and_leaves_unknown(monkeypatch):
@@ -1359,6 +1409,7 @@ def test_craic_arm_mission_uses_real_arm_backends_and_no_flame_grasp():
 
     assert detect_flame_task['type'] == 'detect_flame'
     assert detect_flame_task['backend'] == 'topic'
+    assert detect_flame_task['detection_topic'] == FLAME_DETECTION_ARRAY_TOPIC
     assert detect_flame_task['target_class'] == 'fire'
 
     assert start_flame_task in task_point_2['tasks']
@@ -1388,3 +1439,11 @@ def test_craic_arm_mission_uses_real_arm_backends_and_no_flame_grasp():
     assert classify_task['type'] == 'classify_place'
     assert classify_task['backend'] == 'action'
     assert classify_task['task_type_name'] == 'CLASSIFY_PLATFORM_TO_COLOR_BOXES'
+
+
+def test_verify_point3_flame_tracking_uses_flame_pipeline_topic():
+    mission = load_yaml(VERIFY_POINT3_FLAME_MISSION_PATH)
+
+    detect_flame_task = task_named(mission, 'detect_flame_at_point_3')
+
+    assert detect_flame_task['detection_topic'] == FLAME_DETECTION_ARRAY_TOPIC

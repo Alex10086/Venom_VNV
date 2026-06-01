@@ -42,7 +42,7 @@ waypoints:
       - name: detect_flame_at_point_3
         type: detect_flame
         backend: topic
-        detection_topic: /perception/detections_2d_array
+        detection_topic: /perception/flame/detections_2d_array
         target_class: fire
         min_confidence: 0.45
         min_consecutive_detections: 1
