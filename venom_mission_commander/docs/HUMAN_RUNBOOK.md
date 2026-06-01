@@ -90,17 +90,25 @@ ros2 launch venom_mission_commander mission_commander.launch.py \
   mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/competition_10x6_arm_mission.yaml
 ```
 
-只验证任务编排、读表、回传、语音链路时，可使用 skip-navigation 配置：
-
-```text
-config/meter_digit_voice_host_report_verification_mission.yaml
-```
-
-对应一键联调 launch：
+模块逐个联调时，不建议每个模块都新增一个 launch。推荐统一使用
+`mission_commander.launch.py`，只切换 skip-navigation 验证 YAML：
 
 ```bash
-ros2 launch venom_mission_commander meter_digit_voice_host_report_verification.launch.py
+ros2 launch venom_mission_commander mission_commander.launch.py \
+  use_nav:=false \
+  mock_nav_delay_sec:=0.0 \
+  mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/verify_point2_meter_host_voice.yaml
 ```
+
+| 要测的链路 | 推荐 YAML | 运行前先启动 |
+| --- | --- | --- |
+| 一号点抓取 | `config/verify_point1_grasp.yaml` | 机械臂 action server、抓取视觉/目标融合 |
+| 二号点读表 + 播报 | `config/verify_point2_meter_voice.yaml` | `/perception/read_printed_number`、WAV/声卡 |
+| 二号点读表 + 图像回传 + 播报 | `config/verify_point2_meter_host_voice.yaml` | `/perception/read_printed_number`，且 response 带 `image_path` |
+| 三号点火焰追踪/识别 | `config/verify_point3_flame_tracking.yaml` | flame detector、`/flame_arm_tracker/set_enabled`、`/flame_arm_tracker/status` |
+| 四号点分类投放 | `config/verify_point4_classify_place.yaml` | 机械臂 action server，且物体/夹爪前置状态正确 |
+
+旧的 `meter_digit_voice*_verification.launch.py` 仍可作为“一键启动相机 + YOLO + reader + commander”的兼容入口；新的日常模块测试入口以上表为准。
 
 ## 7. 现场日志怎么看
 

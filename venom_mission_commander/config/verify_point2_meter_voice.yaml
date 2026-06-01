@@ -1,0 +1,44 @@
+# Skip-Nav2 module verification for CRAIC2026 point 2 meter reading + voice.
+# Bring up /perception/read_printed_number and the WAV/audio device before running.
+# Run with:
+#   ros2 launch venom_mission_commander mission_commander.launch.py \
+#     mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/verify_point2_meter_voice.yaml \
+#     use_nav:=false
+
+mission:
+  id: verify_point2_meter_voice
+  loop: false
+  stop_on_task_failure: true
+
+waypoints:
+  - name: verify_point2_meter_voice_station
+    description: 跳过导航，只验证二号作业点读表 service 和 WAV 语音播报。
+    frame_id: map
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    skip_navigation: true
+    kind: operation_stop
+    tasks:
+      - name: wait_for_meter_reader
+        type: wait
+        seconds: 1.0
+
+      - name: read_meter_at_point_2
+        type: read_meter
+        backend: service
+        service_name: /perception/read_printed_number
+        meter_id: competition_meter
+        expected_digits: 4
+        min_confidence: 0.6
+        timeout_sec: 10.0
+        service_wait_timeout_sec: 3.0
+        output_key: meter_reading
+
+      - name: voice_report_meter
+        type: voice_report
+        backend: command
+        template: 电表 {meter_id} 读数 {value}
+        command: /home/alex/venom_ws/scripts/speak_meter_wav.sh
+        timeout_sec: 12.0
+        required: true

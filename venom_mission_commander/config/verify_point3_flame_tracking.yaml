@@ -1,0 +1,59 @@
+# Skip-Nav2 module verification for CRAIC2026 point 3 flame detection/tracking.
+# Bring up flame_yolo_detector and flame_arm_tracker before running.
+# Run with:
+#   ros2 launch venom_mission_commander mission_commander.launch.py \
+#     mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/verify_point3_flame_tracking.yaml \
+#     use_nav:=false
+
+mission:
+  id: verify_point3_flame_tracking
+  loop: false
+  stop_on_task_failure: true
+
+waypoints:
+  - name: verify_point3_flame_tracking_station
+    description: 跳过导航，验证火焰 tracker 启停、状态等待和检测 topic。
+    frame_id: map
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    skip_navigation: true
+    kind: operation_stop
+    tasks:
+      - name: start_flame_tracking
+        type: track_flame
+        backend: service
+        mode: start
+        require_detection: false
+        service_name: /flame_arm_tracker/set_enabled
+        status_topic: /flame_arm_tracker/status
+        service_wait_timeout_sec: 1.0
+        wait_until_tracking: true
+        require_target_acquired: false
+        ready_timeout_sec: 4.0
+        target_class: fire
+        timeout_sec: 3.0
+        output_key: last_flame_tracking
+
+      - name: wait_tracking_visible
+        type: wait
+        seconds: 2.0
+
+      - name: detect_flame_at_point_3
+        type: detect_flame
+        backend: topic
+        detection_topic: /perception/detections_2d_array
+        target_class: fire
+        min_confidence: 0.45
+        min_consecutive_detections: 1
+        timeout_sec: 5.0
+        output_key: flame_detection
+
+      - name: stop_flame_tracking
+        type: track_flame
+        backend: service
+        mode: stop
+        service_name: /flame_arm_tracker/set_enabled
+        service_wait_timeout_sec: 1.0
+        timeout_sec: 3.0
+        output_key: last_flame_tracking

@@ -70,6 +70,17 @@ ros2 launch venom_mission_commander mission_commander.launch.py \
   use_nav:=false
 ```
 
+单模块 skip-navigation 验证也复用同一个 launch，只切换 `verify_point*.yaml`：
+
+```bash
+ros2 launch venom_mission_commander mission_commander.launch.py \
+  use_nav:=false \
+  mock_nav_delay_sec:=0.0 \
+  mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/verify_point2_meter_host_voice.yaml
+```
+
+现有模块验证配置见 `docs/HUMAN_RUNBOOK.md`。
+
 CRAIC2026 真机/仿真 Nav2 任务编排：
 
 ```bash

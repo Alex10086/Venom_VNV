@@ -315,6 +315,11 @@ required: true
 | `config/competition_10x6_arm_mission.yaml` | CRAIC2026 10×6 场地真实后端任务链 |
 | `config/competition_mission_template.yaml` | 比赛/真机 mission 模板 |
 | `config/competition_10x6_mission.yaml` | 10×6 比赛仿真地图近似路线 |
+| `config/verify_point1_grasp.yaml` | skip-navigation，验证一号点抓取 action |
+| `config/verify_point2_meter_voice.yaml` | skip-navigation，验证二号点读表 service + WAV 语音 |
+| `config/verify_point2_meter_host_voice.yaml` | skip-navigation，验证二号点读表 + 图片回传 + WAV 语音 |
+| `config/verify_point3_flame_tracking.yaml` | skip-navigation，验证三号点火焰 tracker service/status + detection topic |
+| `config/verify_point4_classify_place.yaml` | skip-navigation，验证四号点分类投放 action |
 | `config/printed_number_service_mission.yaml` | 跳过导航，验证读表 service + voice |
 | `config/meter_digit_voice_verification_mission.yaml` | 跳过导航，验证数字识别 + WAV 语音 |
 | `config/meter_digit_voice_host_report_verification_mission.yaml` | 跳过导航，验证数字识别 + 成功图片 + host report + WAV 语音 |
