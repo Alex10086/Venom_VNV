@@ -25,7 +25,7 @@
   <exec_depend>venom_manipulation_interfaces</exec_depend>
   <exec_depend>printed_number_interfaces</exec_depend>
   <exec_depend>printed_number_reader</exec_depend>
-  <exec_depend>v4l2_camera</exec_depend>
+  <exec_depend>realsense2_camera</exec_depend>
   <exec_depend>yolo_detector</exec_depend>
 
   <test_depend>ament_flake8</test_depend>

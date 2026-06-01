@@ -46,6 +46,6 @@ waypoints:
         type: voice_report
         backend: command
         template: 电表 {meter_id} 读数 {value}
-        command: /home/alex/venom_ws/scripts/speak_meter_wav.sh
+        command: /home/venom/venom_ws/scripts/speak_meter_wav.sh
         timeout_sec: 12.0
         required: true

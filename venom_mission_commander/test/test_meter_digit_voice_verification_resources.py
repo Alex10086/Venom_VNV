@@ -20,6 +20,11 @@ LAUNCH_PATH = PACKAGE_DIR / 'launch' / 'meter_digit_voice_verification.launch.py
 INTEGRATED_LAUNCH_PATH = (
     PACKAGE_DIR / 'launch' / 'meter_digit_voice_host_report_verification.launch.py'
 )
+D435I_COLOR_IMAGE_TOPIC = '/camera/camera/color/image_raw'
+METER_VERIFICATION_LAUNCHES = (
+    LAUNCH_PATH,
+    INTEGRATED_LAUNCH_PATH,
+)
 
 
 def load_yaml(path):
@@ -68,6 +73,11 @@ def load_launch_description(path, module_name):
     assert isinstance(launch_description, LaunchDescription)
 
 
+def launch_source(path):
+    assert path.exists()
+    return path.read_text(encoding='utf-8')
+
+
 def test_meter_digit_voice_mission_config_chain():
     tasks = tasks_for(MISSION_PATH)
 
@@ -109,3 +119,37 @@ def test_integrated_launch_imports_and_generates_description():
         INTEGRATED_LAUNCH_PATH,
         'meter_digit_voice_host_report_launch',
     )
+
+
+def test_meter_verification_launches_use_realsense_camera_driver():
+    for path in METER_VERIFICATION_LAUNCHES:
+        source = launch_source(path)
+
+        assert "FindPackageShare('realsense2_camera')" in source
+        assert "package='v4l2_camera'" not in source
+        assert "executable='v4l2_camera_node'" not in source
+
+
+def test_meter_verification_yolo_defaults_to_d435i_color_image_topic():
+    for path in METER_VERIFICATION_LAUNCHES:
+        source = launch_source(path)
+
+        assert "'image_topic'" in source
+        assert f"D435I_COLOR_IMAGE_TOPIC = '{D435I_COLOR_IMAGE_TOPIC}'" in source
+        assert 'default_value=D435I_COLOR_IMAGE_TOPIC' in source
+
+
+def test_meter_verification_realsense_launch_does_not_inherit_yolo_args():
+    for path in METER_VERIFICATION_LAUNCHES:
+        source = launch_source(path)
+
+        assert 'GroupAction' in source
+        assert 'forwarding=False' in source
+
+
+def test_meter_verification_realsense_defaults_to_usb2_safe_color_profile():
+    for path in METER_VERIFICATION_LAUNCHES:
+        source = launch_source(path)
+
+        assert "'rgb_camera.color_profile'" in source
+        assert "default_value='640x480x15'" in source

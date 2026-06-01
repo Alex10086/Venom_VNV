@@ -1,9 +1,8 @@
-"""Launch camera, YOLO reader, success-image saving, and commander."""
-
-from typing import List
+"""Launch D435i camera, YOLO reader, success-image saving, and commander."""
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
 from launch_ros.actions import Node
@@ -11,7 +10,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
-STABLE_VIDEO_DEVICE = '/dev/v4l/by-id/usb-SunplusIT_Inc_FHD_Webcam_01.00.00-video-index0'  # noqa: E501
+D435I_COLOR_IMAGE_TOPIC = '/camera/camera/color/image_raw'
 SUCCESS_IMAGE_DIR = '/tmp/venom_meter_images'
 
 
@@ -23,14 +22,16 @@ def generate_launch_description():
         'meter_digit_voice_host_report_verification_mission.yaml',
     ])
 
-    video_device = LaunchConfiguration('video_device')
-    camera_frame_id = LaunchConfiguration('camera_frame_id')
-    image_topic = LaunchConfiguration('image_topic')
-    camera_info_topic = LaunchConfiguration('camera_info_topic')
-    pixel_format = LaunchConfiguration('pixel_format')
-    output_encoding = LaunchConfiguration('output_encoding')
-    image_size = LaunchConfiguration('image_size')
+    camera_namespace = LaunchConfiguration('camera_namespace')
+    camera_name = LaunchConfiguration('camera_name')
+    serial_no = LaunchConfiguration('serial_no')
+    usb_port_id = LaunchConfiguration('usb_port_id')
+    color_profile = LaunchConfiguration('rgb_camera.color_profile')
+    color_auto_exposure = LaunchConfiguration('rgb_camera.enable_auto_exposure')
+    enable_depth = LaunchConfiguration('enable_depth')
     camera_log_level = LaunchConfiguration('camera_log_level')
+    camera_output = LaunchConfiguration('camera_output')
+    image_topic = LaunchConfiguration('image_topic')
 
     model_path = LaunchConfiguration('model_path')
     detections_topic = LaunchConfiguration('detections_topic')
@@ -41,31 +42,82 @@ def generate_launch_description():
     success_image_dir = LaunchConfiguration('success_image_dir')
     success_image_wait_sec = LaunchConfiguration('success_image_wait_sec')
 
+    realsense_camera = GroupAction(
+        forwarding=False,
+        launch_configurations={
+            'camera_namespace': camera_namespace,
+            'camera_name': camera_name,
+            'serial_no': serial_no,
+            'usb_port_id': usb_port_id,
+            'log_level': camera_log_level,
+            'output': camera_output,
+            'enable_color': 'true',
+            'rgb_camera.color_profile': color_profile,
+            'rgb_camera.color_format': 'RGB8',
+            'rgb_camera.enable_auto_exposure': color_auto_exposure,
+            'enable_depth': enable_depth,
+            'enable_infra': 'false',
+            'enable_infra1': 'false',
+            'enable_infra2': 'false',
+            'enable_gyro': 'false',
+            'enable_accel': 'false',
+            'enable_motion': 'false',
+            'enable_rgbd': 'false',
+            'pointcloud.enable': 'false',
+            'publish_tf': 'false',
+        },
+        actions=[
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    PathJoinSubstitution([
+                        FindPackageShare('realsense2_camera'),
+                        'launch',
+                        'rs_launch.py',
+                    ])
+                ),
+            ),
+        ],
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument(
-            'video_device',
-            default_value=STABLE_VIDEO_DEVICE,
+            'camera_namespace',
+            default_value='camera',
         ),
         DeclareLaunchArgument(
-            'camera_frame_id',
-            default_value='camera_optical_frame',
+            'camera_name',
+            default_value='camera',
+        ),
+        DeclareLaunchArgument(
+            'serial_no',
+            default_value="''",
+        ),
+        DeclareLaunchArgument(
+            'usb_port_id',
+            default_value="''",
+        ),
+        DeclareLaunchArgument(
+            'rgb_camera.color_profile',
+            default_value='640x480x15',
+        ),
+        DeclareLaunchArgument(
+            'rgb_camera.enable_auto_exposure',
+            default_value='true',
+        ),
+        DeclareLaunchArgument(
+            'enable_depth',
+            default_value='false',
         ),
         DeclareLaunchArgument(
             'image_topic',
-            default_value='/perception/verification/image_raw',
+            default_value=D435I_COLOR_IMAGE_TOPIC,
         ),
-        DeclareLaunchArgument(
-            'camera_info_topic',
-            default_value='/perception/verification/camera_info',
-        ),
-        DeclareLaunchArgument('pixel_format', default_value='YUYV'),
-        DeclareLaunchArgument('output_encoding', default_value='bgr8'),
-        DeclareLaunchArgument('image_size', default_value='[640, 480]'),
         DeclareLaunchArgument('camera_log_level', default_value='warn'),
+        DeclareLaunchArgument('camera_output', default_value='screen'),
         DeclareLaunchArgument(
             'model_path',
             default_value=(
-                '/home/alex/venom_ws/models/yolo/yolo_26_detect_digit.pt'
+                '/home/venom/venom_ws/models/yolo/yolo_26_detect_digit.pt'
             ),
         ),
         DeclareLaunchArgument(
@@ -80,24 +132,7 @@ def generate_launch_description():
         DeclareLaunchArgument('yolo_device', default_value='cpu'),
         DeclareLaunchArgument('success_image_dir', default_value=SUCCESS_IMAGE_DIR),
         DeclareLaunchArgument('success_image_wait_sec', default_value='0.5'),
-        Node(
-            package='v4l2_camera',
-            executable='v4l2_camera_node',
-            name='meter_voice_host_report_camera',
-            output='screen',
-            ros_arguments=['--log-level', camera_log_level],
-            parameters=[{
-                'video_device': video_device,
-                'camera_frame_id': camera_frame_id,
-                'pixel_format': pixel_format,
-                'output_encoding': output_encoding,
-                'image_size': ParameterValue(image_size, value_type=List[int]),
-            }],
-            remappings=[
-                ('image_raw', image_topic),
-                ('camera_info', camera_info_topic),
-            ],
-        ),
+        realsense_camera,
         Node(
             package='yolo_detector',
             executable='yolo_node',
