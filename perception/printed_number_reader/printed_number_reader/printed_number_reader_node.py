@@ -107,7 +107,7 @@ class PrintedNumberReader(Node):
         self.declare_parameter('detections_topic', '/perception/digit_detections')
         self.declare_parameter('image_topic', '/perception/debug/yolo_result')
         self.declare_parameter('reader_mode', 'mock')
-        self.declare_parameter('mock_value', '12345')
+        self.declare_parameter('mock_value', '1234')
         self.declare_parameter('mock_confidence', 1.0)
         self.declare_parameter('default_timeout_sec', 3.0)
         self.declare_parameter('min_confidence', 0.7)

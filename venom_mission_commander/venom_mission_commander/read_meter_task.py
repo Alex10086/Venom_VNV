@@ -44,7 +44,7 @@ def parse_mock_config(params: dict[str, Any]) -> ReadMeterMockConfig:
     return ReadMeterMockConfig(
         meter_id=str(params.get('meter_id', 'meter_1')),
         delay_sec=float(params.get('mock_delay_sec', 0.5)),
-        value=params.get('mock_value', '220.0V'),
+        value=params.get('mock_value', '1234'),
         confidence=float(params.get('mock_confidence', 0.9)),
     )
 

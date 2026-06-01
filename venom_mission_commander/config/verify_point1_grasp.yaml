@@ -2,7 +2,7 @@
 # Bring up the arm action server and its vision/target pipeline before running.
 # Run with:
 #   ros2 launch venom_mission_commander mission_commander.launch.py \
-#     mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/verify_point1_grasp.yaml \
+#     mission_config:=$HOME/venom_ws/src/venom_vnv/venom_mission_commander/config/verify_point1_grasp.yaml \
 #     use_nav:=false
 
 mission:

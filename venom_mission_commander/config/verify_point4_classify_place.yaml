@@ -2,7 +2,7 @@
 # Bring up the arm action server and ensure the object/preconditions are ready.
 # Run with:
 #   ros2 launch venom_mission_commander mission_commander.launch.py \
-#     mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/verify_point4_classify_place.yaml \
+#     mission_config:=$HOME/venom_ws/src/venom_vnv/venom_mission_commander/config/verify_point4_classify_place.yaml \
 #     use_nav:=false
 
 mission:

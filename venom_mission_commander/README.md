@@ -60,14 +60,26 @@ start_area
 
 ## 快速启动示例
 
-Mock 编排验证：
+全任务 mock，导航也 mock，只测 mission_commander 流程：
 
 ```bash
-cd /home/alex/venom_ws
+cd "$HOME/venom_ws"
 source install/setup.bash
 
 ros2 launch venom_mission_commander mission_commander.launch.py \
-  use_nav:=false
+  use_nav:=false \
+  mock_nav_delay_sec:=0.0 \
+  mission_config:=$HOME/venom_ws/src/venom_vnv/venom_mission_commander/config/competition_10x6_mission.yaml
+```
+
+全任务 mock，只测 Nav2 导航：
+
+```bash
+ros2 launch venom_mission_commander mission_commander.launch.py \
+  use_nav:=true \
+  use_sim_time:=false \
+  nav2_wait_mode:=bt_navigator \
+  mission_config:=$HOME/venom_ws/src/venom_vnv/venom_mission_commander/config/competition_10x6_mission.yaml
 ```
 
 单模块 skip-navigation 验证也复用同一个 launch，只切换 `verify_point*.yaml`：
@@ -76,7 +88,7 @@ ros2 launch venom_mission_commander mission_commander.launch.py \
 ros2 launch venom_mission_commander mission_commander.launch.py \
   use_nav:=false \
   mock_nav_delay_sec:=0.0 \
-  mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/verify_point2_meter_host_voice.yaml
+  mission_config:=$HOME/venom_ws/src/venom_vnv/venom_mission_commander/config/verify_point2_meter_host_voice.yaml
 ```
 
 现有模块验证配置见 `docs/HUMAN_RUNBOOK.md`。
@@ -84,14 +96,14 @@ ros2 launch venom_mission_commander mission_commander.launch.py \
 CRAIC2026 真机/仿真 Nav2 任务编排：
 
 ```bash
-cd /home/alex/venom_ws
+cd "$HOME/venom_ws"
 source install/setup.bash
 
 ros2 launch venom_mission_commander mission_commander.launch.py \
   use_nav:=true \
   use_sim_time:=false \
   nav2_wait_mode:=bt_navigator \
-  mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/competition_10x6_arm_mission.yaml
+  mission_config:=$HOME/venom_ws/src/venom_vnv/venom_mission_commander/config/competition_10x6_arm_mission.yaml
 ```
 
 运行比赛配置前，应先启动 Nav2、读表服务、机械臂 action server、火焰检测/追踪和语音设备；完整顺序见 `docs/HUMAN_RUNBOOK.md`。

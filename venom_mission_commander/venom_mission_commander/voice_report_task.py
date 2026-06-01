@@ -1,3 +1,4 @@
+import os
 import shlex
 import shutil
 import subprocess
@@ -61,8 +62,10 @@ def build_mock_voice_report(text: str) -> dict[str, Any]:
 
 
 def parse_command_config(params: dict[str, Any]) -> VoiceReportCommandConfig:
+    raw_command = str(params.get('command', 'spd-say -w')).strip()
+    expanded_command = os.path.expanduser(os.path.expandvars(raw_command))
     return VoiceReportCommandConfig(
-        command=shlex.split(str(params.get('command', 'spd-say -w')).strip()),
+        command=shlex.split(expanded_command),
         timeout_sec=float(params.get('timeout_sec', 4.0)),
         required=str(params.get('required', False)).lower() in {'1', 'true', 'yes', 'on'},
     )

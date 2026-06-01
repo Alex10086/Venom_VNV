@@ -80,8 +80,8 @@ waypoints:
         meter_id: competition_meter
         expected_digits: 4
         min_confidence: 0.6
-        timeout_sec: 5.0
-        service_wait_timeout_sec: 1.0
+        timeout_sec: 10.0
+        service_wait_timeout_sec: 3.0
         output_key: meter_reading
       - name: report_meter_image_to_host
         type: host_report
@@ -100,7 +100,7 @@ waypoints:
         type: voice_report
         backend: command
         template: 电表 {meter_id} 读数 {value}
-        command: /home/alex/venom_ws/scripts/speak_meter_wav.sh
+        command: $HOME/venom_ws/scripts/speak_meter_wav.sh
         timeout_sec: 12.0
         required: true
       - name: start_flame_tracking_for_moving_segment

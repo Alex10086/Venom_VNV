@@ -139,6 +139,22 @@ def test_meter_verification_yolo_defaults_to_d435i_color_image_topic():
         assert 'default_value=D435I_COLOR_IMAGE_TOPIC' in source
 
 
+def test_meter_verification_model_path_uses_home_environment():
+    for path in METER_VERIFICATION_LAUNCHES:
+        source = launch_source(path)
+
+        assert '/home/alex/venom_ws' not in source
+        assert "EnvironmentVariable('HOME')" in source
+        assert "'venom_ws'" in source
+        assert "'yolo_26_detect_digit.pt'" in source
+
+
+def test_meter_voice_reader_uses_annotated_image_topic_for_success_images():
+    source = launch_source(LAUNCH_PATH)
+
+    assert "'image_topic': annotated_image_topic" in source
+
+
 def test_meter_verification_realsense_launch_does_not_inherit_yolo_args():
     for path in METER_VERIFICATION_LAUNCHES:
         source = launch_source(path)

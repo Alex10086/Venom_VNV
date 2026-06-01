@@ -29,6 +29,6 @@ waypoints:
         type: voice_report
         backend: command
         template: 电表当前读数为 {value}
-        command: /home/venom/venom_ws/scripts/speak_meter_wav.sh
+        command: $HOME/venom_ws/scripts/speak_meter_wav.sh
         timeout_sec: 12.0
         required: true

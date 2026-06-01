@@ -52,7 +52,7 @@ waypoints:
       - name: read_meter_at_point_2
         type: read_meter
         meter_id: example_meter
-        mock_value: "220.0V"
+        mock_value: "1234"
         mock_confidence: 0.9
         mock_delay_sec: 0.3
       - name: voice_report_meter

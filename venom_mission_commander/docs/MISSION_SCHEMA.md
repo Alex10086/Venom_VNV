@@ -163,7 +163,7 @@ output_key: last_placement
 | --- | --- | --- | --- |
 | `backend` | `mock` | all | `mock` / `service` |
 | `meter_id` | `meter_1` | all | 目标电表 ID |
-| `mock_value` | `220.0V` | mock | mock 返回值 |
+| `mock_value` | `1234` | mock | mock 返回值；推荐保持纯数字以贴近 `ReadPrintedNumber` service contract |
 | `mock_confidence` | `0.9` | mock | mock 置信度 |
 | `mock_delay_sec` | `0.5` | mock | mock 等待时间 |
 | `service_name` | `/perception/read_printed_number` | service | `ReadPrintedNumber` service 名 |
@@ -189,6 +189,17 @@ string image_path
 ```
 
 Service response 的 `image_path` 非空时会写入 `blackboard[output_key]["image_path"]`，供 `host_report` 使用。
+
+Service name convention:
+
+- `/perception/read_printed_number`：默认/比赛读表服务，供 `competition_10x6_arm_mission.yaml`、`verify_point2_meter_voice.yaml`、`verify_point2_meter_host_voice.yaml` 使用。
+- `/perception/verification/read_printed_number`：一键读表验证 launch 内部服务，供 `meter_digit_voice_verification_mission.yaml`、`meter_digit_voice_host_report_verification_mission.yaml` 使用。
+- Mission YAML 的 `service_name` 必须和实际启动的 reader service 一致；不要混用两个命名空间。
+
+Recommended timeout/confidence profiles:
+
+- 比赛主线：`min_confidence: 0.6`，`timeout_sec: 10.0`，`service_wait_timeout_sec: 3.0`。
+- 模块联调/一键验证：`min_confidence: 0.25`，`timeout_sec: 30.0`，`service_wait_timeout_sec: 10.0`。
 
 ### `host_report`
 
@@ -233,7 +244,7 @@ YAML image_path
 | `mock_delay_sec` | `0.2` | mock | mock 等待时间 |
 | `text` | unset | all | 直接指定播报文本，优先级最高 |
 | `template` | unset | all | 使用 `meter_reading` 字段渲染文本 |
-| `command` | `spd-say -w` | command | 本机语音命令，会追加播报文本作为最后参数 |
+| `command` | `spd-say -w` | command | 本机语音命令，会追加播报文本作为最后参数；支持 `$HOME` / 环境变量 / `~` 展开 |
 | `timeout_sec` | `4.0` | command | 命令执行超时时间 |
 | `required` | `false` | command | command 失败时是否让 task 失败 |
 
@@ -243,7 +254,7 @@ CRAIC2026 uses:
 type: voice_report
 backend: command
 template: 电表 {meter_id} 读数 {value}
-command: /home/alex/venom_ws/scripts/speak_meter_wav.sh
+command: $HOME/venom_ws/scripts/speak_meter_wav.sh
 timeout_sec: 12.0
 required: true
 ```
@@ -314,7 +325,7 @@ required: true
 | `config/rmul_sim_mission.yaml` | RMUL Gazebo/Nav2 仿真路线 |
 | `config/competition_10x6_arm_mission.yaml` | CRAIC2026 10×6 场地真实后端任务链 |
 | `config/competition_mission_template.yaml` | 比赛/真机 mission 模板 |
-| `config/competition_10x6_mission.yaml` | 10×6 比赛仿真地图近似路线 |
+| `config/competition_10x6_mission.yaml` | 10×6 比赛仿真地图近似路线；全任务 mock，可配 Nav2 只测导航 |
 | `config/verify_point1_grasp.yaml` | skip-navigation，验证一号点抓取 action |
 | `config/verify_point2_meter_voice.yaml` | skip-navigation，验证二号点读表 service + WAV 语音 |
 | `config/verify_point2_meter_host_voice.yaml` | skip-navigation，验证二号点读表 + 图片回传 + WAV 语音 |

@@ -3,7 +3,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution
 
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -116,9 +116,13 @@ def generate_launch_description():
         DeclareLaunchArgument('camera_output', default_value='screen'),
         DeclareLaunchArgument(
             'model_path',
-            default_value=(
-                '/home/venom/venom_ws/models/yolo/yolo_26_detect_digit.pt'
-            ),
+            default_value=PathJoinSubstitution([
+                EnvironmentVariable('HOME'),
+                'venom_ws',
+                'models',
+                'yolo',
+                'yolo_26_detect_digit.pt',
+            ]),
         ),
         DeclareLaunchArgument(
             'detections_topic',

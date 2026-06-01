@@ -2,7 +2,7 @@
 # Bring up /perception/read_printed_number and the WAV/audio device before running.
 # Run with:
 #   ros2 launch venom_mission_commander mission_commander.launch.py \
-#     mission_config:=/home/alex/venom_ws/src/venom_vnv/venom_mission_commander/config/verify_point2_meter_voice.yaml \
+#     mission_config:=$HOME/venom_ws/src/venom_vnv/venom_mission_commander/config/verify_point2_meter_voice.yaml \
 #     use_nav:=false
 
 mission:
@@ -30,15 +30,15 @@ waypoints:
         service_name: /perception/read_printed_number
         meter_id: competition_meter
         expected_digits: 4
-        min_confidence: 0.6
-        timeout_sec: 10.0
-        service_wait_timeout_sec: 3.0
+        min_confidence: 0.25
+        timeout_sec: 30.0
+        service_wait_timeout_sec: 10.0
         output_key: meter_reading
 
       - name: voice_report_meter
         type: voice_report
         backend: command
         template: 电表 {meter_id} 读数 {value}
-        command: /home/alex/venom_ws/scripts/speak_meter_wav.sh
+        command: $HOME/venom_ws/scripts/speak_meter_wav.sh
         timeout_sec: 12.0
         required: true
