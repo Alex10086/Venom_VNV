@@ -78,7 +78,7 @@ class VisualTargetProbe(Node):
         self.timeout_sec = timeout_sec
         self.grasp_target: Optional[GraspTarget] = None
         self.end_pose: Optional[PoseStamped] = None
-        self.create_subscription(GraspTarget, "/perception/grasp_target", self._on_target, 10)
+        self.create_subscription(GraspTarget, "/perception/pick/grasp_target", self._on_target, 10)
         self.create_subscription(PoseStamped, "/end_pose_stamped", self._on_end_pose, 10)
         self.pos_pub = self.create_publisher(PosCmd, "/pos_cmd", 10)
 
@@ -96,7 +96,7 @@ class VisualTargetProbe(Node):
             if self.grasp_target is not None:
                 return
             if now_sec >= deadline:
-                raise TimeoutError("Timed out waiting for /perception/grasp_target")
+                raise TimeoutError("Timed out waiting for /perception/pick/grasp_target")
 
     def publish_pos_cmd(self, position, rpy, gripper_open_m: float) -> None:
         msg = PosCmd()

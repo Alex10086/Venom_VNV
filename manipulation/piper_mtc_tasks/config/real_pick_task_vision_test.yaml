@@ -87,6 +87,8 @@ pick_place_server:
         - 0.30
     vision_target:
       enabled: true
+      grasp_target_topic: /perception/pick/grasp_target
+      target_valid_topic: /perception/pick/target_valid
       require_single_target: true
       require_valid_signal: false
       target_timeout_sec: 120.0
@@ -128,7 +130,9 @@ pick_place_server:
       grasp_orientation_rpy: [0.0, 1.57079632679, 1.57079632679]
       box_target_timeout_sec: 3.0
       min_box_confidence: 0.5
-      target_fusion_node_name: /grasp_target_fusion
+      grasp_target_topic: /perception/classify/grasp_target
+      target_valid_topic: /perception/classify/target_valid
+      target_fusion_node_name: /classify_grasp_target_fusion
       set_fusion_target_class: true
       target_switch_settle_sec: 0.20
     pre_place:

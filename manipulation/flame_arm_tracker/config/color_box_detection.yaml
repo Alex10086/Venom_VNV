@@ -1,8 +1,8 @@
 color_box_detector:
   ros__parameters:
     image_topic: /camera/d435i/color/image_raw
-    detection_topic: /perception/detections_2d
-    detection_array_topic: /perception/detections_2d_array
+    detection_topic: /perception/classify/detections_2d
+    detection_array_topic: /perception/classify/detections_2d_array
     debug_mask_topic: /perception/debug/color_box_mask
     debug_result_topic: /perception/debug/color_box_result
     publish_debug_images: true

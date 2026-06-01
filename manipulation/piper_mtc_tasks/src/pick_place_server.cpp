@@ -663,13 +663,21 @@ public:
       std::bind(&PickPlaceServer::handle_joint_state, this, std::placeholders::_1),
       joint_state_options);
     grasp_target_subscription_ = create_subscription<GraspTarget>(
-      "/perception/grasp_target",
+      parameters_.vision_target.grasp_target_topic,
       rclcpp::SensorDataQoS(),
       std::bind(&PickPlaceServer::handle_grasp_target, this, std::placeholders::_1));
     target_valid_subscription_ = create_subscription<std_msgs::msg::Bool>(
-      "/perception/target_valid",
+      parameters_.vision_target.target_valid_topic,
       10,
       std::bind(&PickPlaceServer::handle_target_valid, this, std::placeholders::_1));
+    classification_grasp_target_subscription_ = create_subscription<GraspTarget>(
+      parameters_.classification_place.grasp_target_topic,
+      rclcpp::SensorDataQoS(),
+      std::bind(&PickPlaceServer::handle_classification_grasp_target, this, std::placeholders::_1));
+    classification_target_valid_subscription_ = create_subscription<std_msgs::msg::Bool>(
+      parameters_.classification_place.target_valid_topic,
+      10,
+      std::bind(&PickPlaceServer::handle_classification_target_valid, this, std::placeholders::_1));
 
     action_server_ = rclcpp_action::create_server<ExecuteTask>(
       this,
@@ -692,6 +700,11 @@ public:
       parameters_.action_name.c_str(),
       parameters_.arm_group_name.c_str(),
       parameters_.gripper_group_name.c_str());
+    RCLCPP_INFO(
+      get_logger(),
+      "Vision target topics: pick='%s', classify='%s'",
+      parameters_.vision_target.grasp_target_topic.c_str(),
+      parameters_.classification_place.grasp_target_topic.c_str());
   }
 
 private:
@@ -791,8 +804,33 @@ private:
     const bool pick_task =
       task_type == ExecuteTask::Goal::PICK_AND_PLACE_FIXED || vision_pick_task;
     const bool diagnostic_ik_only = pick_task && parameters_.diagnostic_ik_only;
+    const bool arm_motion_task =
+      move_home_task || observe_task || pick_task || classification_task || repeat_visual_pick_task;
 
     try {
+      if (arm_motion_task && parameters_.require_fresh_joint_states) {
+        publish_feedback(
+          goal_handle,
+          ExecuteTask::Goal::STAGE_IDLE,
+          "Checking Piper joint state freshness");
+
+        std::string joint_state_error_message;
+        if (!wait_for_fresh_arm_joint_state(
+            parameters_.joint_state_wait_timeout_sec,
+            parameters_.joint_state_max_age_sec,
+            joint_state_error_message))
+        {
+          finish_result(
+            goal_handle,
+            false,
+            ExecuteTask::Goal::STAGE_IDLE,
+            ExecuteTask::Result::ERROR_NOT_READY,
+            joint_state_error_message);
+          clear_current_task(nullptr);
+          return;
+        }
+      }
+
       if (observe_task) {
         execute_observe_goal(goal_handle);
         return;
@@ -1507,6 +1545,24 @@ private:
     return pose;
   }
 
+  XYZ clamp_xyz(const XYZ & value, const XYZ & min_value, const XYZ & max_value) const
+  {
+    return XYZ{
+      std::clamp(value.x, min_value.x, max_value.x),
+      std::clamp(value.y, min_value.y, max_value.y),
+      std::clamp(value.z, min_value.z, max_value.z)};
+  }
+
+  bool contains_near_xyz(const std::vector<XYZ> & values, const XYZ & candidate) const
+  {
+    constexpr double kEpsilon = 1e-6;
+    return std::any_of(values.begin(), values.end(), [&](const XYZ & value) {
+      return std::abs(value.x - candidate.x) < kEpsilon &&
+             std::abs(value.y - candidate.y) < kEpsilon &&
+             std::abs(value.z - candidate.z) < kEpsilon;
+    });
+  }
+
   void rebuild_factory_from_parameters()
   {
     auto node_handle = rclcpp::Node::SharedPtr(this, [](rclcpp::Node *) {});
@@ -1939,23 +1995,32 @@ private:
 
     while (rclcpp::ok()) {
       {
-        std::lock_guard<std::mutex> lock(vision_target_mutex_);
-        if (!latest_grasp_target_) {
+        std::lock_guard<std::mutex> lock(classification_target_mutex_);
+        if (!latest_classification_grasp_target_) {
           error_message = "No box target has been received yet.";
-        } else if ((latest_grasp_target_received_at_ - not_before).seconds() < 0.0) {
+        } else if ((latest_classification_grasp_target_received_at_ - not_before).seconds() < 0.0) {
           error_message = "Waiting for a fresh box target.";
-        } else if (latest_grasp_target_->header.frame_id != parameters_.planning_frame) {
+        } else if (latest_classification_grasp_target_->header.frame_id != parameters_.planning_frame) {
           error_message = "Latest box target is not expressed in the planning frame.";
-        } else if (normalize_class_name(latest_grasp_target_->class_name) != normalized_box_class) {
+        } else if (normalize_class_name(latest_classification_grasp_target_->class_name) != normalized_box_class) {
           error_message =
-            "Latest box target class is '" + latest_grasp_target_->class_name +
+            "Latest box target class is '" + latest_classification_grasp_target_->class_name +
             "', waiting for '" + box_class + "'.";
-        } else if (latest_grasp_target_->confidence < config.min_box_confidence) {
+        } else if (latest_classification_grasp_target_->confidence < config.min_box_confidence) {
           error_message = "Latest box target confidence is below threshold.";
-        } else if (parameters_.vision_target.require_valid_signal && !latest_target_valid_) {
+        } else if (parameters_.vision_target.require_valid_signal && !latest_classification_target_valid_) {
           error_message = "Latest box target is currently marked invalid.";
+        } else if (
+          latest_classification_grasp_target_->pose.position.x < parameters_.vision_target.workspace_min.x ||
+          latest_classification_grasp_target_->pose.position.x > parameters_.vision_target.workspace_max.x ||
+          latest_classification_grasp_target_->pose.position.y < parameters_.vision_target.workspace_min.y ||
+          latest_classification_grasp_target_->pose.position.y > parameters_.vision_target.workspace_max.y ||
+          latest_classification_grasp_target_->pose.position.z < parameters_.vision_target.workspace_min.z ||
+          latest_classification_grasp_target_->pose.position.z > parameters_.vision_target.workspace_max.z)
+        {
+          error_message = "Latest box target position is outside workspace bounds.";
         } else {
-          target = *latest_grasp_target_;
+          target = *latest_classification_grasp_target_;
           return true;
         }
       }
@@ -2054,18 +2119,77 @@ private:
     std::string & error_message)
   {
     const auto & config = parameters_.classification_place;
-    XYZ release_position{
+    const XYZ ideal_release_position{
       box_target.pose.position.x + config.release_offset.x,
       box_target.pose.position.y + config.release_offset.y,
       box_target.pose.position.z + config.release_offset.z};
+    const XYZ projected_release_position = clamp_xyz(
+      ideal_release_position,
+      config.release_workspace_min,
+      config.release_workspace_max);
 
-    if (!execute_arm_pose_goal(
-        goal_handle,
-        make_pose_stamped(release_position, config.grasp_orientation),
-        "Moving above " + box_target.class_name + " for release",
-        ExecuteTask::Goal::STAGE_MOVING_PLACE,
-        error_message))
-    {
+    std::vector<XYZ> release_candidates;
+    release_candidates.push_back(projected_release_position);
+    for (const auto & offset : config.release_candidate_offsets) {
+      const auto candidate = clamp_xyz(
+        add_xyz(projected_release_position, offset),
+        config.release_workspace_min,
+        config.release_workspace_max);
+      if (!contains_near_xyz(release_candidates, candidate)) {
+        release_candidates.push_back(candidate);
+      }
+    }
+
+    RCLCPP_INFO(
+      get_logger(),
+      "Classification release for %s: detected=(%.4f, %.4f, %.4f), ideal=(%.4f, %.4f, %.4f), projected=(%.4f, %.4f, %.4f), candidates=%zu",
+      box_target.class_name.c_str(),
+      box_target.pose.position.x,
+      box_target.pose.position.y,
+      box_target.pose.position.z,
+      ideal_release_position.x,
+      ideal_release_position.y,
+      ideal_release_position.z,
+      projected_release_position.x,
+      projected_release_position.y,
+      projected_release_position.z,
+      release_candidates.size());
+
+    bool release_reached = false;
+    std::string last_error;
+    for (std::size_t candidate_index = 0; candidate_index < release_candidates.size(); ++candidate_index) {
+      const auto & release_position = release_candidates[candidate_index];
+      std::string candidate_error;
+      const auto stage_name =
+        "Moving above " + box_target.class_name + " for release candidate " +
+        std::to_string(candidate_index);
+      if (execute_arm_pose_goal(
+          goal_handle,
+          make_pose_stamped(release_position, config.release_orientation),
+          stage_name,
+          ExecuteTask::Goal::STAGE_MOVING_PLACE,
+          candidate_error))
+      {
+        RCLCPP_INFO(
+          get_logger(),
+          "Selected classification release candidate %zu for %s at (%.4f, %.4f, %.4f)",
+          candidate_index,
+          box_target.class_name.c_str(),
+          release_position.x,
+          release_position.y,
+          release_position.z);
+        error_message.clear();
+        release_reached = true;
+        break;
+      }
+      last_error = candidate_error;
+    }
+
+    if (!release_reached) {
+      error_message =
+        last_error.empty() ?
+        ("Failed to plan any release candidate for " + box_target.class_name + ".") :
+        last_error;
       return false;
     }
 
@@ -2093,11 +2217,13 @@ private:
     try {
       stop_gripper_hold();
       if (parameters_.observe_pose.enabled) {
-        if (!execute_arm_pose_goal(
-            goal_handle,
-            make_pose_stamped(parameters_.observe_pose.position, parameters_.observe_pose.orientation),
-            "Moving to classification observe pose",
-            ExecuteTask::Goal::STAGE_MOVING_PREGRASP,
+        publish_feedback(
+          goal_handle,
+          ExecuteTask::Goal::STAGE_MOVING_HOME,
+          "Moving to classification observe pose at zero");
+        if (!execute_named_arm_target(
+            parameters_.arm_home_named_target,
+            "classification observe pose at zero",
             error_message))
         {
           finish_result(
@@ -2887,7 +3013,16 @@ private:
 
   void handle_joint_state(const sensor_msgs::msg::JointState::SharedPtr message)
   {
+    bool have_arm_joints[6] = {false, false, false, false, false, false};
+
     for (std::size_t index = 0; index < message->name.size() && index < message->position.size(); ++index) {
+      if (message->name[index].size() == 6 && message->name[index].rfind("joint", 0) == 0) {
+        const char joint_index = message->name[index][5];
+        if (joint_index >= '1' && joint_index <= '6') {
+          have_arm_joints[static_cast<std::size_t>(joint_index - '1')] = true;
+        }
+      }
+
       if (message->name[index] != "joint7") {
         continue;
       }
@@ -2895,7 +3030,16 @@ private:
       std::lock_guard<std::mutex> lock(gazebo_attachment_mutex_);
       latest_joint7_position_ = message->position[index];
       have_joint7_position_ = true;
-      return;
+    }
+
+    bool complete_arm_state = true;
+    for (const bool have_joint : have_arm_joints) {
+      complete_arm_state = complete_arm_state && have_joint;
+    }
+    if (complete_arm_state) {
+      std::lock_guard<std::mutex> lock(joint_state_mutex_);
+      latest_arm_joint_state_received_at_ = now();
+      have_arm_joint_state_ = true;
     }
   }
 
@@ -2910,6 +3054,19 @@ private:
   {
     std::lock_guard<std::mutex> lock(vision_target_mutex_);
     latest_target_valid_ = message->data;
+  }
+
+  void handle_classification_grasp_target(const GraspTarget::SharedPtr message)
+  {
+    std::lock_guard<std::mutex> lock(classification_target_mutex_);
+    latest_classification_grasp_target_ = *message;
+    latest_classification_grasp_target_received_at_ = now();
+  }
+
+  void handle_classification_target_valid(const std_msgs::msg::Bool::SharedPtr message)
+  {
+    std::lock_guard<std::mutex> lock(classification_target_mutex_);
+    latest_classification_target_valid_ = message->data;
   }
 
   bool wait_for_visual_target_after(
@@ -3532,6 +3689,60 @@ private:
     return latest_joint7_position_;
   }
 
+  bool has_fresh_arm_joint_state(double max_age_sec, double * age_sec = nullptr)
+  {
+    std::lock_guard<std::mutex> lock(joint_state_mutex_);
+    if (!have_arm_joint_state_) {
+      return false;
+    }
+
+    const double age = (now() - latest_arm_joint_state_received_at_).seconds();
+    if (age_sec != nullptr) {
+      *age_sec = age;
+    }
+    return age <= std::max(0.0, max_age_sec);
+  }
+
+  bool wait_for_fresh_arm_joint_state(
+    double timeout_sec,
+    double max_age_sec,
+    std::string & error_message)
+  {
+    const auto deadline = now() + rclcpp::Duration::from_seconds(std::max(0.0, timeout_sec));
+    double last_age_sec = 0.0;
+
+    while (rclcpp::ok()) {
+      if (has_fresh_arm_joint_state(max_age_sec, &last_age_sec)) {
+        return true;
+      }
+
+      if (now() >= deadline) {
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(joint_state_mutex_);
+      if (!have_arm_joint_state_) {
+        error_message =
+          "Piper joint state preflight failed: no complete /joint_states sample for joints 1-6. "
+          "The Piper driver may still be restarting or CAN may require manual recovery.";
+        return false;
+      }
+      last_age_sec = (now() - latest_arm_joint_state_received_at_).seconds();
+    }
+
+    std::ostringstream message;
+    message << "Piper joint state preflight failed: latest /joint_states sample is "
+            << std::fixed << std::setprecision(3) << last_age_sec
+            << "s old, max allowed is " << std::setprecision(3)
+            << std::max(0.0, max_age_sec)
+            << "s. The Piper driver may still be restarting or CAN may require manual recovery.";
+    error_message = message.str();
+    return false;
+  }
+
   double normalize_direct_gripper_target(double joint7_target)
   {
     // MoveIt gripper semantics in this workspace are: open is negative, close is zero.
@@ -3864,21 +4075,30 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_subscription_;
   rclcpp::Subscription<GraspTarget>::SharedPtr grasp_target_subscription_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr target_valid_subscription_;
+  rclcpp::Subscription<GraspTarget>::SharedPtr classification_grasp_target_subscription_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr classification_target_valid_subscription_;
   rclcpp::TimerBase::SharedPtr autostart_timer_;
   std::mutex current_task_mutex_;
   std::mutex gazebo_attachment_mutex_;
   std::mutex gripper_hold_mutex_;
   std::mutex vision_target_mutex_;
+  std::mutex classification_target_mutex_;
+  std::mutex joint_state_mutex_;
   mtc::Task * current_task_{nullptr};
   bool active_goal_{false};
   bool gazebo_block_attached_{false};
+  bool have_arm_joint_state_{false};
   bool have_joint7_position_{false};
   bool gripper_hold_active_{false};
   double gripper_hold_target_{0.0};
   double latest_joint7_position_{0.0};
   bool latest_target_valid_{false};
+  bool latest_classification_target_valid_{false};
   std::optional<GraspTarget> latest_grasp_target_;
+  std::optional<GraspTarget> latest_classification_grasp_target_;
+  rclcpp::Time latest_arm_joint_state_received_at_{0, 0, RCL_ROS_TIME};
   rclcpp::Time latest_grasp_target_received_at_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time latest_classification_grasp_target_received_at_{0, 0, RCL_ROS_TIME};
 };
 
 }  // namespace piper_mtc_tasks
