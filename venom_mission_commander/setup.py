@@ -19,6 +19,10 @@ setup(
         ('share/' + package_name, ['package.xml', 'README.md']),
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
         (os.path.join('share', package_name, 'docs'), glob('docs/*.md')),
+        (
+            os.path.join('share', package_name, 'docs', 'archive'),
+            glob('docs/archive/*.md'),
+        ),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
     ],
     install_requires=['setuptools'],
