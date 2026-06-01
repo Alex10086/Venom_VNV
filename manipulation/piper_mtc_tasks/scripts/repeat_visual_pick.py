@@ -172,7 +172,7 @@ def main(argv: Iterable[str] = sys.argv[1:]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--action-name", default="/manipulation/execute_task")
     parser.add_argument("--pick-node", default="/pick_place_server")
-    parser.add_argument("--fusion-node", default="/grasp_target_fusion")
+    parser.add_argument("--fusion-node", default="/pick_grasp_target_fusion")
     parser.add_argument("--target-class", default="bottle")
     parser.add_argument("--place-indices", type=_parse_indices, default=[0, 1])
     parser.add_argument("--wait-timeout-sec", type=float, default=60.0)

@@ -1,8 +1,8 @@
 flame_color_detector:
   ros__parameters:
     image_topic: /camera/d435i/color/image_raw
-    detection_topic: /perception/detections_2d
-    detection_array_topic: /perception/detections_2d_array
+    detection_topic: /perception/flame/detections_2d
+    detection_array_topic: /perception/flame/detections_2d_array
     debug_mask_topic: /perception/debug/flame_mask
     debug_result_topic: /perception/debug/flame_result
     publish_debug_images: false
@@ -38,8 +38,8 @@ flame_color_detector:
 flame_yolo_detector:
   ros__parameters:
     image_topic: /camera/d435i/color/image_raw
-    detection_topic: /perception/detections_2d
-    detection_array_topic: /perception/detections_2d_array
+    detection_topic: /perception/flame/detections_2d
+    detection_array_topic: /perception/flame/detections_2d_array
     debug_result_topic: /perception/debug/flame_yolo_result
     publish_debug_images: false
     model_path: models/exp_256_openvino_model
@@ -53,7 +53,7 @@ flame_yolo_detector:
 
 flame_arm_tracker:
   ros__parameters:
-    detection_array_topic: /perception/detections_2d_array
+    detection_array_topic: /perception/flame/detections_2d_array
     camera_info_topic: /camera/d435i/color/camera_info
     joint_state_topic: /joint_states
     cmd_vel_topic: /cmd_vel

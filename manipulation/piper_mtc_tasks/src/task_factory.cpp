@@ -169,6 +169,9 @@ void declare_task_parameters(rclcpp::Node & node)
   node.declare_parameter<bool>("enable_gazebo_attachment", false);
   node.declare_parameter<bool>("gazebo_attach_require_gripper_closed", true);
   node.declare_parameter<int64_t>("autostart_task_type", 0);
+  node.declare_parameter<bool>("require_fresh_joint_states", true);
+  node.declare_parameter<double>("joint_state_max_age_sec", 1.0);
+  node.declare_parameter<double>("joint_state_wait_timeout_sec", 8.0);
   node.declare_parameter<double>("gazebo_attach_update_hz", 30.0);
   node.declare_parameter<double>("gazebo_attach_min_delay_sec", 8.0);
   node.declare_parameter<double>("gazebo_attach_max_distance", 0.18);
@@ -237,6 +240,8 @@ void declare_task_parameters(rclcpp::Node & node)
   node.declare_parameter<std::vector<std::string>>(
     "vision_target.allowed_target_classes",
     std::vector<std::string>{"block", "cube"});
+  node.declare_parameter<std::string>("vision_target.grasp_target_topic", "/perception/grasp_target");
+  node.declare_parameter<std::string>("vision_target.target_valid_topic", "/perception/target_valid");
   node.declare_parameter<bool>("observe_pose.enabled", false);
   node.declare_parameter<std::vector<double>>(
     "observe_pose.xyz", {0.25, 0.0, 0.35});
@@ -272,8 +277,20 @@ void declare_task_parameters(rclcpp::Node & node)
     "classification_place.release_offset_xyz", {0.0, 0.0, 0.10});
   node.declare_parameter<std::vector<double>>(
     "classification_place.grasp_orientation_rpy", {0.0, 1.57079632679, 1.57079632679});
+  node.declare_parameter<std::vector<double>>(
+    "classification_place.release_orientation_rpy", {0.0, -1.57079632679, 0.0});
+  node.declare_parameter<std::vector<double>>(
+    "classification_place.release_workspace_min_xyz", {-10.0, -10.0, -10.0});
+  node.declare_parameter<std::vector<double>>(
+    "classification_place.release_workspace_max_xyz", {10.0, 10.0, 10.0});
+  node.declare_parameter<std::vector<double>>(
+    "classification_place.release_candidate_offsets_xyz", {0.0, 0.0, 0.0});
   node.declare_parameter<double>("classification_place.box_target_timeout_sec", 3.0);
   node.declare_parameter<double>("classification_place.min_box_confidence", 0.5);
+  node.declare_parameter<std::string>(
+    "classification_place.grasp_target_topic", "/perception/grasp_target");
+  node.declare_parameter<std::string>(
+    "classification_place.target_valid_topic", "/perception/target_valid");
   node.declare_parameter<std::string>(
     "classification_place.target_fusion_node_name", "/grasp_target_fusion");
   node.declare_parameter<bool>("classification_place.set_fusion_target_class", true);
@@ -404,6 +421,12 @@ TaskParameters load_task_parameters(rclcpp::Node & node)
   parameters.gazebo_attach_require_gripper_closed =
     node.get_parameter("gazebo_attach_require_gripper_closed").as_bool();
   parameters.autostart_task_type = node.get_parameter("autostart_task_type").as_int();
+  parameters.require_fresh_joint_states =
+    node.get_parameter("require_fresh_joint_states").as_bool();
+  parameters.joint_state_max_age_sec =
+    std::max(0.0, node.get_parameter("joint_state_max_age_sec").as_double());
+  parameters.joint_state_wait_timeout_sec =
+    std::max(0.0, node.get_parameter("joint_state_wait_timeout_sec").as_double());
   parameters.gazebo_attach_update_hz =
     node.get_parameter("gazebo_attach_update_hz").as_double();
   parameters.gazebo_attach_min_delay_sec =
@@ -508,6 +531,16 @@ TaskParameters load_task_parameters(rclcpp::Node & node)
     node.get_parameter("vision_target.yaw_candidate_offsets").as_double_array();
   parameters.vision_target.allowed_target_classes =
     node.get_parameter("vision_target.allowed_target_classes").as_string_array();
+  parameters.vision_target.grasp_target_topic =
+    node.get_parameter("vision_target.grasp_target_topic").as_string();
+  if (parameters.vision_target.grasp_target_topic.empty()) {
+    parameters.vision_target.grasp_target_topic = "/perception/grasp_target";
+  }
+  parameters.vision_target.target_valid_topic =
+    node.get_parameter("vision_target.target_valid_topic").as_string();
+  if (parameters.vision_target.target_valid_topic.empty()) {
+    parameters.vision_target.target_valid_topic = "/perception/target_valid";
+  }
   parameters.observe_pose.enabled =
     node.get_parameter("observe_pose.enabled").as_bool();
   parameters.observe_pose.position =
@@ -563,10 +596,31 @@ TaskParameters load_task_parameters(rclcpp::Node & node)
     read_xyz_parameter(node, "classification_place.release_offset_xyz");
   parameters.classification_place.grasp_orientation =
     read_rpy_parameter(node, "classification_place.grasp_orientation_rpy");
+  parameters.classification_place.release_orientation =
+    read_rpy_parameter(node, "classification_place.release_orientation_rpy");
+  parameters.classification_place.release_workspace_min =
+    read_xyz_parameter(node, "classification_place.release_workspace_min_xyz");
+  parameters.classification_place.release_workspace_max =
+    read_xyz_parameter(node, "classification_place.release_workspace_max_xyz");
+  parameters.classification_place.release_candidate_offsets =
+    read_xyz_triples_parameter(node, "classification_place.release_candidate_offsets_xyz");
+  if (parameters.classification_place.release_candidate_offsets.empty()) {
+    parameters.classification_place.release_candidate_offsets.push_back(XYZ{0.0, 0.0, 0.0});
+  }
   parameters.classification_place.box_target_timeout_sec =
     node.get_parameter("classification_place.box_target_timeout_sec").as_double();
   parameters.classification_place.min_box_confidence =
     node.get_parameter("classification_place.min_box_confidence").as_double();
+  parameters.classification_place.grasp_target_topic =
+    node.get_parameter("classification_place.grasp_target_topic").as_string();
+  if (parameters.classification_place.grasp_target_topic.empty()) {
+    parameters.classification_place.grasp_target_topic = "/perception/grasp_target";
+  }
+  parameters.classification_place.target_valid_topic =
+    node.get_parameter("classification_place.target_valid_topic").as_string();
+  if (parameters.classification_place.target_valid_topic.empty()) {
+    parameters.classification_place.target_valid_topic = "/perception/target_valid";
+  }
   parameters.classification_place.target_fusion_node_name =
     node.get_parameter("classification_place.target_fusion_node_name").as_string();
   if (parameters.classification_place.target_fusion_node_name.empty()) {

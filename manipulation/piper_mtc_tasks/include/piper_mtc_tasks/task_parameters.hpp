@@ -71,6 +71,8 @@ struct VisionTargetConfig
   XYZ workspace_max{10.0, 10.0, 10.0};
   std::vector<double> yaw_candidate_offsets{0.0};
   std::vector<std::string> allowed_target_classes{"block", "cube"};
+  std::string grasp_target_topic{"/perception/grasp_target"};
+  std::string target_valid_topic{"/perception/target_valid"};
 };
 
 struct ObservePose
@@ -116,8 +118,14 @@ struct ClassificationPlaceConfig
   XYZ lift_offset{0.0, 0.0, 0.07};
   XYZ release_offset{0.0, 0.0, 0.10};
   RPY grasp_orientation{0.0, 1.57079632679, 1.57079632679};
+  RPY release_orientation{0.0, -1.57079632679, 0.0};
+  XYZ release_workspace_min{-10.0, -10.0, -10.0};
+  XYZ release_workspace_max{10.0, 10.0, 10.0};
+  std::vector<XYZ> release_candidate_offsets{{0.0, 0.0, 0.0}};
   double box_target_timeout_sec{3.0};
   double min_box_confidence{0.5};
+  std::string grasp_target_topic{"/perception/grasp_target"};
+  std::string target_valid_topic{"/perception/target_valid"};
   std::string target_fusion_node_name{"/grasp_target_fusion"};
   bool set_fusion_target_class{true};
   double target_switch_settle_sec{0.20};
@@ -186,6 +194,9 @@ struct TaskParameters
   bool enable_gazebo_attachment{false};
   bool gazebo_attach_require_gripper_closed{true};
   int64_t autostart_task_type{0};
+  bool require_fresh_joint_states{true};
+  double joint_state_max_age_sec{1.0};
+  double joint_state_wait_timeout_sec{8.0};
   double gazebo_attach_update_hz{30.0};
   double gazebo_attach_min_delay_sec{8.0};
   double gazebo_attach_max_distance{0.18};

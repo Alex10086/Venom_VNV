@@ -11,7 +11,7 @@ pick_place_server:
     gripper_close_named_target: close
     move_home_open_gripper: true
     skip_open_gripper_stage: true
-    gripper_open_joint7: -0.040
+    gripper_open_joint7: -0.033
     gripper_close_joint7: 0.0
     pipeline_planner_id: ompl
     max_solutions: 1
@@ -19,8 +19,8 @@ pick_place_server:
     min_solution_distance: 0.05
     connect_timeout_sec: 20.0
     plan_timeout_sec: 30.0
-    approach_min_distance: 0.03
-    approach_max_distance: 0.05
+    approach_min_distance: 0.0
+    approach_max_distance: 0.0
     lift_min_distance: 0.05
     lift_max_distance: 0.06
     retreat_min_distance: 0.0
@@ -41,6 +41,9 @@ pick_place_server:
     gazebo_attach_robot_link: link7
     gazebo_attach_object_link: can_link
     autostart_task_type: 0
+    require_fresh_joint_states: true
+    joint_state_max_age_sec: 1.0
+    joint_state_wait_timeout_sec: 8.0
     tcp_offset_xyz: [0.0, 0.0, -0.0758]
     grasp_target_offset_xyz: [0.0, 0.0, 0.020]
     pregrasp_offset_xyz: [0.0, 0.0, 0.070]
@@ -69,20 +72,22 @@ pick_place_server:
     place_target:
       offset_xyz: [0.0, 0.0, 0.0]
       release_height: 0.10
-      orientation_rpy: [3.14159265359, 1.3962634016, -2.39617317732]
-      release_after_pre_place: true
-      allow_direct_release_fallback: true
+      orientation_rpy: [0.0, 1.57079632679, -1.57079632679]
+      release_after_pre_place: false
+      allow_direct_release_fallback: false
       direct_release_retreat_z: 0.08
       fixed_pose_index: 0
       fixed_pose_candidates_xyz:
         - 0.0
-        - 0.20
-        - 0.30
+        - -0.20
+        - 0.37
         - 0.0
-        - 0.28
-        - 0.30
+        - -0.28
+        - 0.37
     vision_target:
       enabled: true
+      grasp_target_topic: /perception/pick/grasp_target
+      target_valid_topic: /perception/pick/target_valid
       require_single_target: true
       require_valid_signal: false
       target_timeout_sec: 120.0
@@ -91,10 +96,11 @@ pick_place_server:
       compute_grasp_offsets: true
       lock_lateral_offsets_to_zero: false
       default_target_size_xyz: [0.044, 0.044, 0.10]
-      target_position_bias_xyz: [0.15, 0.0, 0.0]
+      target_position_bias_xyz: [0.125, 0.0, 0.0]
+      pregrasp_distance: 0.0
       workspace_min_xyz: [0.10, -0.35, 0.03]
       workspace_max_xyz: [0.60, 0.35, 0.40]
-      yaw_candidate_offsets: [0.0, -0.52359877560, 0.52359877560, -0.78539816339, 0.78539816339]
+      yaw_candidate_offsets: [0.0, -0.1745329252, 0.1745329252, -0.3490658504, 0.3490658504]
       grasp_strategy: radial_side
       object_shape: cylinder
       allowed_target_classes: [black_block, white_block, black, white, can, redbull, block, cylinder, bottle]
@@ -104,31 +110,52 @@ pick_place_server:
       rpy: [0.0, 1.57079632679, 1.57079632679]
     classification_place:
       enabled: true
-      # Tray order after the collection task:
-      #   near slot = white block, picked and dropped first
-      #   far slot  = black block, picked and dropped second
+      # Payload tray order after the collection task:
+      #   slot 0 = first bottle, dropped into black_box
+      #   slot 1 = second bottle, dropped into golden_box
       platform_slots_xyz:
         - 0.0
-        - 0.20
+        - -0.20
         - 0.30
         - 0.0
-        - 0.28
+        - -0.28
         - 0.30
-      platform_slot_classes: [white_block, black_block]
-      box_classes: [white_box, black_box]
+      platform_slot_classes: [bottle, bottle]
+      box_classes: [black_box, golden_box]
       pregrasp_offset_xyz: [0.0, 0.0, 0.07]
       lift_offset_xyz: [0.0, 0.0, 0.07]
-      release_offset_xyz: [0.0, 0.0, 0.10]
-      grasp_orientation_rpy: [0.0, 1.57079632679, 1.57079632679]
-      box_target_timeout_sec: 3.0
+      release_offset_xyz: [0.0, 0.0, 0.23]
+      grasp_orientation_rpy: [0.0, 1.57079632679, -1.57079632679]
+      release_orientation_rpy: [0.0, 1.57079632679, -1.57079632679]
+      release_workspace_min_xyz: [0.0, -0.30, 0.34]
+      release_workspace_max_xyz: [0.10, -0.10, 0.40]
+      release_candidate_offsets_xyz:
+        - 0.0
+        - 0.0
+        - 0.0
+        - -0.05
+        - 0.0
+        - 0.0
+        - 0.05
+        - 0.0
+        - 0.0
+        - 0.0
+        - -0.05
+        - 0.0
+        - 0.0
+        - 0.05
+        - 0.0
+      box_target_timeout_sec: 10.0
       min_box_confidence: 0.5
-      target_fusion_node_name: /grasp_target_fusion
+      grasp_target_topic: /perception/classify/grasp_target
+      target_valid_topic: /perception/classify/target_valid
+      target_fusion_node_name: /classify_grasp_target_fusion
       set_fusion_target_class: true
       target_switch_settle_sec: 0.20
     repeat_visual_pick:
       target_class: bottle
       place_indices: [0, 1]
-      target_fusion_node_name: /grasp_target_fusion
+      target_fusion_node_name: /pick_grasp_target_fusion
       set_fusion_target_class: true
       target_switch_settle_sec: 0.20
       delay_between_picks_sec: 1.0
@@ -137,7 +164,7 @@ pick_place_server:
       service_timeout_sec: 3.0
     pre_place:
       enabled: true
-      heading_offset: 0.80
+      heading_offset: 2.21429743559
       base_joint_name: joint1
       min_delta: 0.02
       coarse_base_first: true
@@ -145,7 +172,7 @@ pick_place_server:
       retract_joint4_name: joint4
       retract_joint3_delta: -0.30
       retract_joint4_delta: 0.35
-      hover_after_base: true
+      hover_after_base: false
       hover_margin_xy: 0.01
       hover_margin_z: 0.03
     pickup_table:
