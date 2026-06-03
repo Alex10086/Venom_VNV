@@ -118,7 +118,10 @@ def generate_launch_description():
         DeclareLaunchArgument("pick_yolo_min_confidence", default_value=LaunchConfiguration("yolo_min_confidence")),
         DeclareLaunchArgument("pick_yolo_output_topic", default_value="/perception/pick/yolo_detections"),
         DeclareLaunchArgument("pick_yolo_debug_topic", default_value="/perception/pick/debug/yolo_result"),
-        DeclareLaunchArgument("classification_yolo_model_path", default_value="yolov8n.pt"),
+        DeclareLaunchArgument(
+            "classification_yolo_model_path",
+            default_value="/home/chfyx/Downloads/box.pt",
+        ),
         DeclareLaunchArgument("classification_yolo_allowed_classes", default_value="black_box,golden_box"),
         DeclareLaunchArgument("classification_yolo_min_confidence", default_value="0.5"),
         DeclareLaunchArgument("classification_yolo_output_topic", default_value="/perception/classify/yolo_detections"),
