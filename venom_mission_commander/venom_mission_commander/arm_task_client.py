@@ -192,7 +192,7 @@ def execute_manipulation_action_task(
         node,
         context.blackboard,
         'before manipulation action',
-        force=True,
+        force=False,
     )
     if not stop_ok:
         message = f'active flame tracking stop failed before manipulation action: {stop_error}'

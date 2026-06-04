@@ -42,14 +42,14 @@ flame_yolo_detector:
     detection_array_topic: /perception/flame/detections_2d_array
     debug_result_topic: /perception/debug/flame_yolo_result
     publish_debug_images: false
-    model_path: models/exp_256_openvino_model
+    model_path: ~/venom_ws/models/yolo/exp.pt
     class_names:
       - fire
     confidence_threshold: 0.45
     iou_threshold: 0.45
     image_size: 256
     device: ""
-    use_openvino_runtime: true
+    use_openvino_runtime: false
 
 flame_arm_tracker:
   ros__parameters:
