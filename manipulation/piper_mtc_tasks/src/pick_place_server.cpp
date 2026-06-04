@@ -24,6 +24,7 @@
 #include <moveit/task_constructor/task.h>
 #include <moveit/trajectory_processing/iterative_time_parameterization.h>
 #include <moveit/move_group_interface/move_group_interface.h>
+#include <control_msgs/control_msgs/action/follow_joint_trajectory.hpp>
 #include <moveit_task_constructor_msgs/msg/solution.hpp>
 #include <moveit_msgs/msg/move_it_error_codes.hpp>
 #include <geometry_msgs/msg/pose.hpp>
@@ -593,12 +594,18 @@ uint8_t feedback_stage_for_step(const std::string & stage_name)
   return venom_manipulation_interfaces::action::ExecuteTask::Goal::STAGE_MOVING_PREGRASP;
 }
 
+// Keep these task ids aligned with ExecuteTask.action while installed interface headers are stale.
+constexpr uint8_t kTaskRepeatVisualPickToPayload = 6u;
+constexpr uint8_t kTaskStartFlameTracking = 7u;
+constexpr uint8_t kTaskStopFlameTracking = 8u;
+
 }  // namespace
 
 class PickPlaceServer : public rclcpp::Node
 {
 public:
   using ExecuteTask = venom_manipulation_interfaces::action::ExecuteTask;
+  using FollowJointTrajectory = control_msgs::action::FollowJointTrajectory;
   using GraspTarget = venom_manipulation_interfaces::msg::GraspTarget;
   using SetBool = std_srvs::srv::SetBool;
 #if defined(HAVE_LINKATTACHER_MSGS)
@@ -636,6 +643,10 @@ public:
       create_callback_group(rclcpp::CallbackGroupType::Reentrant);
     gazebo_callback_group_ =
       create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+    arm_direct_trajectory_client_ = rclcpp_action::create_client<FollowJointTrajectory>(
+      this,
+      "/arm_controller/follow_joint_trajectory",
+      action_callback_group_);
 
     if (parameters_.enable_gazebo_attachment) {
 #if defined(HAVE_LINKATTACHER_MSGS)
@@ -717,9 +728,9 @@ private:
       goal->task_type != ExecuteTask::Goal::MOVE_OBSERVE &&
       goal->task_type != ExecuteTask::Goal::PICK_AND_PLACE_LATEST_TARGET &&
       goal->task_type != ExecuteTask::Goal::CLASSIFY_PLATFORM_TO_COLOR_BOXES &&
-      goal->task_type != ExecuteTask::Goal::REPEAT_VISUAL_PICK_TO_PAYLOAD &&
-      goal->task_type != ExecuteTask::Goal::START_FLAME_TRACKING &&
-      goal->task_type != ExecuteTask::Goal::STOP_FLAME_TRACKING)
+      goal->task_type != kTaskRepeatVisualPickToPayload &&
+      goal->task_type != kTaskStartFlameTracking &&
+      goal->task_type != kTaskStopFlameTracking)
     {
       RCLCPP_WARN(get_logger(), "Rejecting unsupported task type %u", goal->task_type);
       return rclcpp_action::GoalResponse::REJECT;
@@ -796,11 +807,11 @@ private:
     const bool classification_task =
       task_type == ExecuteTask::Goal::CLASSIFY_PLATFORM_TO_COLOR_BOXES;
     const bool repeat_visual_pick_task =
-      task_type == ExecuteTask::Goal::REPEAT_VISUAL_PICK_TO_PAYLOAD;
+      task_type == kTaskRepeatVisualPickToPayload;
     const bool flame_tracking_start_task =
-      task_type == ExecuteTask::Goal::START_FLAME_TRACKING;
+      task_type == kTaskStartFlameTracking;
     const bool flame_tracking_stop_task =
-      task_type == ExecuteTask::Goal::STOP_FLAME_TRACKING;
+      task_type == kTaskStopFlameTracking;
     const bool pick_task =
       task_type == ExecuteTask::Goal::PICK_AND_PLACE_FIXED || vision_pick_task;
     const bool diagnostic_ik_only = pick_task && parameters_.diagnostic_ik_only;
@@ -1618,6 +1629,357 @@ private:
     return true;
   }
 
+  TaskParameters build_visual_style_pick_parameters_for_center(const XYZ & object_center) const
+  {
+    TaskParameters local_parameters = parameters_;
+    local_parameters.pickup_object.center = object_center;
+
+    const double collision_scale_xy =
+      positive_or(local_parameters.vision_target.collision_scale_xy, 1.0);
+    const double collision_scale_z =
+      positive_or(local_parameters.vision_target.collision_scale_z, 1.0);
+    local_parameters.pickup_object.radius =
+      0.5 * std::max(
+      local_parameters.vision_target.default_target_size.x,
+      local_parameters.vision_target.default_target_size.y) * collision_scale_xy;
+    local_parameters.pickup_object.height =
+      local_parameters.vision_target.default_target_size.z * collision_scale_z;
+
+    const auto grasp_strategy =
+      normalize_class_name(local_parameters.vision_target.grasp_strategy);
+    if (local_parameters.vision_target.compute_grasp_offsets && grasp_strategy == "radial_side") {
+      const double center_norm_xy = std::hypot(
+        local_parameters.pickup_object.center.x,
+        local_parameters.pickup_object.center.y);
+      XYZ approach_direction{1.0, 0.0, 0.0};
+      if (center_norm_xy > 1e-6) {
+        approach_direction.x = local_parameters.pickup_object.center.x / center_norm_xy;
+        approach_direction.y = local_parameters.pickup_object.center.y / center_norm_xy;
+        approach_direction.z = 0.0;
+      }
+      if (local_parameters.vision_target.lock_lateral_offsets_to_zero) {
+        approach_direction.x = approach_direction.x >= 0.0 ? 1.0 : -1.0;
+        approach_direction.y = 0.0;
+        approach_direction.z = 0.0;
+      }
+      local_parameters.approach_direction = approach_direction;
+      local_parameters.grasp_orientation.yaw =
+        normalize_angle(std::atan2(approach_direction.y, approach_direction.x));
+
+      const double clearance = std::max(0.0, local_parameters.vision_target.grasp_clearance);
+      const double pregrasp_distance =
+        std::max(0.0, local_parameters.vision_target.pregrasp_distance);
+      const double grasp_radius = local_parameters.pickup_object.radius + clearance;
+      const double grasp_z =
+        0.5 * local_parameters.pickup_object.height + local_parameters.vision_target.grasp_z_offset;
+
+      local_parameters.grasp_target_offset = {
+        -approach_direction.x * grasp_radius,
+        -approach_direction.y * grasp_radius,
+        grasp_z};
+      local_parameters.pregrasp_offset = {
+        local_parameters.grasp_target_offset.x - approach_direction.x * pregrasp_distance,
+        local_parameters.grasp_target_offset.y - approach_direction.y * pregrasp_distance,
+        grasp_z};
+
+      local_parameters.top_down_grasp_target_x_candidates =
+        make_single_candidate(local_parameters.grasp_target_offset.x);
+      local_parameters.top_down_grasp_target_y_candidates =
+        make_single_candidate(local_parameters.grasp_target_offset.y);
+      local_parameters.top_down_grasp_target_z_candidates =
+        make_single_candidate(local_parameters.grasp_target_offset.z);
+      local_parameters.top_down_pregrasp_x_candidates =
+        make_single_candidate(local_parameters.pregrasp_offset.x);
+      local_parameters.top_down_pregrasp_y_candidates =
+        make_single_candidate(local_parameters.pregrasp_offset.y);
+      local_parameters.top_down_pregrasp_z_candidates =
+        make_single_candidate(local_parameters.pregrasp_offset.z);
+      local_parameters.top_down_approach_direction_candidates = {
+        approach_direction.x,
+        approach_direction.y,
+        approach_direction.z};
+      local_parameters.top_down_roll_candidates =
+        make_single_candidate(local_parameters.grasp_orientation.roll);
+      local_parameters.top_down_pitch_candidates =
+        make_single_candidate(local_parameters.grasp_orientation.pitch);
+      local_parameters.top_down_yaw_candidates.clear();
+      append_unique_angle_candidate(
+        local_parameters.top_down_yaw_candidates,
+        local_parameters.grasp_orientation.yaw);
+      for (const double offset : local_parameters.vision_target.yaw_candidate_offsets) {
+        append_unique_angle_candidate(
+          local_parameters.top_down_yaw_candidates,
+          local_parameters.grasp_orientation.yaw + offset);
+      }
+
+      if (!has_cartesian_distance(
+          local_parameters.approach_min_distance,
+          local_parameters.approach_max_distance) &&
+        pregrasp_distance > 1e-6)
+      {
+        local_parameters.approach_min_distance = 0.75 * pregrasp_distance;
+        local_parameters.approach_max_distance = pregrasp_distance;
+      }
+    }
+
+    return local_parameters;
+  }
+
+  std::vector<TaskParameters> build_visual_style_pick_candidates(
+    const TaskParameters & base_parameters) const
+  {
+    std::vector<TaskParameters> candidates;
+    const auto add_candidate = [&](double yaw) {
+      const double normalized_yaw = normalize_angle(yaw);
+      const auto existing = std::find_if(
+        candidates.begin(),
+        candidates.end(),
+        [normalized_yaw](const TaskParameters & candidate) {
+          return std::abs(
+            normalize_angle(candidate.grasp_orientation.yaw - normalized_yaw)) < 1e-6;
+        });
+      if (existing != candidates.end()) {
+        return;
+      }
+
+      TaskParameters candidate = base_parameters;
+      candidate.grasp_orientation.yaw = normalized_yaw;
+      candidates.push_back(candidate);
+    };
+
+    add_candidate(base_parameters.grasp_orientation.yaw);
+    for (const double yaw : base_parameters.top_down_yaw_candidates) {
+      add_candidate(yaw);
+    }
+    if (candidates.empty()) {
+      candidates.push_back(base_parameters);
+    }
+    return candidates;
+  }
+
+  geometry_msgs::msg::PoseStamped make_visual_style_pick_pose(
+    const XYZ & object_center,
+    const TaskParameters & candidate_parameters,
+    const XYZ & target_offset) const
+  {
+    TaskParameters local_parameters = candidate_parameters;
+    local_parameters.grasp_target_offset = target_offset;
+
+    Eigen::Isometry3d object_transform = Eigen::Isometry3d::Identity();
+    object_transform.translation().x() = object_center.x;
+    object_transform.translation().y() = object_center.y;
+    object_transform.translation().z() = object_center.z;
+
+    const Eigen::Isometry3d grasp_frame_in_hand =
+      make_grasp_frame_transform(local_parameters);
+    const Eigen::Isometry3d hand_transform =
+      object_transform * grasp_frame_in_hand.inverse();
+
+    geometry_msgs::msg::PoseStamped pose;
+    pose.header.frame_id = candidate_parameters.planning_frame;
+    pose.pose.position.x = hand_transform.translation().x();
+    pose.pose.position.y = hand_transform.translation().y();
+    pose.pose.position.z = hand_transform.translation().z();
+    const Eigen::Quaterniond hand_orientation(hand_transform.rotation());
+    pose.pose.orientation.x = hand_orientation.x();
+    pose.pose.orientation.y = hand_orientation.y();
+    pose.pose.orientation.z = hand_orientation.z();
+    pose.pose.orientation.w = hand_orientation.w();
+    return pose;
+  }
+
+  bool execute_explicit_pose_offset(
+    const std::shared_ptr<GoalHandleExecuteTask> & goal_handle,
+    const XYZ & offset,
+    const std::string & stage_name,
+    uint8_t feedback_stage,
+    std::string & error_message)
+  {
+    if (goal_handle->is_canceling()) {
+      error_message = "Task canceled";
+      return false;
+    }
+
+    const double offset_distance = std::sqrt(
+      offset.x * offset.x + offset.y * offset.y + offset.z * offset.z);
+    if (offset_distance <= 1e-6) {
+      return true;
+    }
+
+    publish_feedback(goal_handle, feedback_stage, stage_name);
+
+    auto current_state = arm_move_group_->getCurrentState(5.0);
+    if (!current_state) {
+      error_message = "Failed to query current arm state before Cartesian offset move.";
+      return false;
+    }
+
+    const auto current_pose = arm_move_group_->getCurrentPose(parameters_.hand_frame);
+    geometry_msgs::msg::Pose target_pose = current_pose.pose;
+    target_pose.position.x += offset.x;
+    target_pose.position.y += offset.y;
+    target_pose.position.z += offset.z;
+
+    moveit_msgs::msg::RobotTrajectory trajectory_message;
+    moveit_msgs::msg::MoveItErrorCodes error_code;
+    const double achieved_fraction = arm_move_group_->computeCartesianPath(
+      std::vector<geometry_msgs::msg::Pose>{target_pose},
+      std::max(parameters_.cartesian_step_size, 0.001),
+      parameters_.cartesian_jump_threshold,
+      trajectory_message,
+      false,
+      &error_code);
+    if (achieved_fraction < 0.99) {
+      error_message =
+        "Cartesian offset move only achieved fraction " + std::to_string(achieved_fraction) + ".";
+      return false;
+    }
+
+    robot_trajectory::RobotTrajectory trajectory(
+      arm_move_group_->getRobotModel(),
+      parameters_.arm_group_name);
+    trajectory.setRobotTrajectoryMsg(*current_state, trajectory_message);
+
+    trajectory_processing::IterativeParabolicTimeParameterization time_parameterization;
+    if (!time_parameterization.computeTimeStamps(
+        trajectory,
+        parameters_.cartesian_velocity_scaling,
+        parameters_.cartesian_acceleration_scaling))
+    {
+      error_message = "Failed to time-parameterize Cartesian offset trajectory.";
+      return false;
+    }
+
+    trajectory.getRobotTrajectoryMsg(trajectory_message);
+    const auto execution_result = arm_move_group_->execute(trajectory_message);
+    if (execution_result.val != moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
+      error_message =
+        "Failed to execute Cartesian offset move with MoveIt error code " +
+        std::to_string(execution_result.val) + ".";
+      return false;
+    }
+    return true;
+  }
+
+  bool execute_visual_style_pick_to_lift(
+    const std::shared_ptr<GoalHandleExecuteTask> & goal_handle,
+    const XYZ & object_center,
+    const std::vector<TaskParameters> & pick_candidates,
+    const std::string & pick_label,
+    std::string & error_message)
+  {
+    stop_gripper_hold();
+    detach_pick_object_from_gazebo_link_attacher();
+    detach_pick_object_from_moveit();
+
+    if (!parameters_.skip_open_gripper_stage) {
+      publish_feedback(
+        goal_handle,
+        ExecuteTask::Goal::STAGE_OPENING_GRIPPER,
+        "Opening gripper for " + pick_label);
+      if (parameters_.gripper_open_joint7 >= -0.5) {
+        publish_gripper_target(parameters_.gripper_open_joint7, 0.40);
+      } else if (!execute_named_gripper_target(
+          parameters_.gripper_open_named_target,
+          "opening for " + pick_label,
+          error_message))
+      {
+        return false;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    }
+
+    bool reached_grasp = false;
+    for (std::size_t candidate_index = 0; candidate_index < pick_candidates.size(); ++candidate_index) {
+      const auto & candidate = pick_candidates[candidate_index];
+      std::ostringstream candidate_label;
+      candidate_label << pick_label << " candidate " << (candidate_index + 1) << "/" <<
+        pick_candidates.size() << " rpy=(" << std::fixed << std::setprecision(4) <<
+        candidate.grasp_orientation.roll << ", " <<
+        candidate.grasp_orientation.pitch << ", " <<
+        candidate.grasp_orientation.yaw << ")";
+      RCLCPP_INFO(
+        get_logger(),
+        "Trying visual-style pick %s around object center (%.4f, %.4f, %.4f)",
+        candidate_label.str().c_str(),
+        object_center.x,
+        object_center.y,
+        object_center.z);
+
+      if (candidate.approach_max_distance > 1e-6 || candidate.approach_min_distance > 1e-6) {
+        if (!execute_arm_pose_goal(
+            goal_handle,
+            make_visual_style_pick_pose(object_center, candidate, candidate.pregrasp_offset),
+            "Moving to pregrasp " + candidate_label.str(),
+            ExecuteTask::Goal::STAGE_MOVING_PREGRASP,
+            error_message))
+        {
+          RCLCPP_WARN(
+            get_logger(),
+            "Pregrasp planning failed for visual-style pick %s, trying direct grasp.",
+            candidate_label.str().c_str());
+        }
+      }
+
+      if (execute_arm_pose_goal(
+          goal_handle,
+          make_visual_style_pick_pose(object_center, candidate, candidate.grasp_target_offset),
+          "Moving to grasp " + candidate_label.str(),
+          ExecuteTask::Goal::STAGE_MOVING_GRASP,
+          error_message))
+      {
+        reached_grasp = true;
+        break;
+      }
+
+      RCLCPP_WARN(
+        get_logger(),
+        "Visual-style pick %s failed before gripper close.",
+        candidate_label.str().c_str());
+    }
+
+    if (!reached_grasp) {
+      if (error_message.empty()) {
+        error_message = "Failed to plan pose goal for all visual-style pick candidates.";
+      }
+      return false;
+    }
+
+    publish_feedback(
+      goal_handle,
+      ExecuteTask::Goal::STAGE_CLOSING_GRIPPER,
+      "Closing gripper on " + pick_label);
+    if (!execute_visual_style_gripper_close(
+        goal_handle,
+        "Closing gripper on " + pick_label,
+        "closing for " + pick_label,
+        error_message))
+    {
+      return false;
+    }
+
+    if (!attach_pick_object_to_moveit(error_message)) {
+      return false;
+    }
+    if (parameters_.enable_gazebo_attachment &&
+      !attach_pick_object_with_gazebo_link_attacher(error_message))
+    {
+      return false;
+    }
+
+    if (has_cartesian_distance(parameters_.lift_min_distance, parameters_.lift_max_distance)) {
+      publish_feedback(
+        goal_handle,
+        ExecuteTask::Goal::STAGE_LIFTING,
+        "Lifting " + pick_label);
+      if (!execute_explicit_lift(goal_handle, error_message)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   bool validate_classification_place_config(std::string & error_message) const
   {
     const auto & config = parameters_.classification_place;
@@ -2045,10 +2407,30 @@ private:
     const auto & config = parameters_.classification_place;
     const auto slot = config.platform_slots[slot_index];
     const auto block_class = config.platform_slot_classes[slot_index];
+    const XYZ pregrasp_position = add_xyz(slot, config.pregrasp_offset);
 
     stop_gripper_hold();
     detach_pick_object_from_gazebo_link_attacher();
     detach_pick_object_from_moveit();
+
+    RCLCPP_INFO(
+      get_logger(),
+      "Classification fixed-slot pick for %s: pregrasp=(%.4f, %.4f, %.4f) "
+      "grasp=(%.4f, %.4f, %.4f) lift_offset=(%.4f, %.4f, %.4f) "
+      "grasp_rpy=(%.4f, %.4f, %.4f)",
+      block_class.c_str(),
+      pregrasp_position.x,
+      pregrasp_position.y,
+      pregrasp_position.z,
+      slot.x,
+      slot.y,
+      slot.z,
+      config.lift_offset.x,
+      config.lift_offset.y,
+      config.lift_offset.z,
+      config.grasp_orientation.roll,
+      config.grasp_orientation.pitch,
+      config.grasp_orientation.yaw);
 
     publish_feedback(
       goal_handle,
@@ -2063,11 +2445,11 @@ private:
     {
       return false;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
 
     if (!execute_arm_pose_goal(
         goal_handle,
-        make_pose_stamped(add_xyz(slot, config.pregrasp_offset), config.grasp_orientation),
+        make_pose_stamped(pregrasp_position, config.grasp_orientation),
         "Moving to " + block_class + " platform pregrasp",
         ExecuteTask::Goal::STAGE_MOVING_PREGRASP,
         error_message))
@@ -2089,28 +2471,25 @@ private:
       goal_handle,
       ExecuteTask::Goal::STAGE_CLOSING_GRIPPER,
       "Closing gripper on " + block_class);
-    if (parameters_.gripper_close_joint7 >= -0.5) {
-      publish_gripper_target(parameters_.gripper_close_joint7, 0.50);
-    } else if (!execute_named_gripper_target(
-        parameters_.gripper_close_named_target,
-        "closing for classification pick",
-        error_message))
-    {
+    if (!execute_contact_aware_gripper_close(goal_handle, error_message)) {
       return false;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(800));
 
-    if (!execute_arm_pose_goal(
-        goal_handle,
-        make_pose_stamped(add_xyz(slot, config.lift_offset), config.grasp_orientation),
-        "Lifting " + block_class + " from platform",
-        ExecuteTask::Goal::STAGE_LIFTING,
-        error_message))
+    if (!attach_pick_object_to_moveit(error_message)) {
+      return false;
+    }
+    if (parameters_.enable_gazebo_attachment &&
+      !attach_pick_object_with_gazebo_link_attacher(error_message))
     {
       return false;
     }
 
-    return true;
+    return execute_explicit_pose_offset(
+      goal_handle,
+      config.lift_offset,
+      "Lifting " + block_class + " from platform",
+      ExecuteTask::Goal::STAGE_LIFTING,
+      error_message);
   }
 
   bool execute_classification_release_to_box(
@@ -2129,7 +2508,16 @@ private:
       config.release_workspace_max);
 
     std::vector<XYZ> release_candidates;
-    release_candidates.push_back(projected_release_position);
+    release_candidates.push_back(ideal_release_position);
+    for (const auto & offset : config.release_candidate_offsets) {
+      const auto candidate = add_xyz(ideal_release_position, offset);
+      if (!contains_near_xyz(release_candidates, candidate)) {
+        release_candidates.push_back(candidate);
+      }
+    }
+    if (!contains_near_xyz(release_candidates, projected_release_position)) {
+      release_candidates.push_back(projected_release_position);
+    }
     for (const auto & offset : config.release_candidate_offsets) {
       const auto candidate = clamp_xyz(
         add_xyz(projected_release_position, offset),
@@ -2142,7 +2530,7 @@ private:
 
     RCLCPP_INFO(
       get_logger(),
-      "Classification release for %s: detected=(%.4f, %.4f, %.4f), ideal=(%.4f, %.4f, %.4f), projected=(%.4f, %.4f, %.4f), candidates=%zu",
+      "Classification release for %s: detected=(%.4f, %.4f, %.4f), ideal=(%.4f, %.4f, %.4f), fallback_projected=(%.4f, %.4f, %.4f), candidates=%zu",
       box_target.class_name.c_str(),
       box_target.pose.position.x,
       box_target.pose.position.y,
@@ -2245,8 +2633,6 @@ private:
           goal_handle,
           ExecuteTask::Goal::STAGE_WAITING_FOR_TARGET,
           "Locating " + box_class + " target");
-
-        const auto target_switch_started_at = now();
         if (!set_fusion_target_class(box_class, error_message)) {
           finish_result(
             goal_handle,
@@ -2257,6 +2643,14 @@ private:
           clear_current_task(nullptr);
           return;
         }
+
+        {
+          std::lock_guard<std::mutex> lock(classification_target_mutex_);
+          latest_classification_grasp_target_.reset();
+          latest_classification_target_valid_ = false;
+          latest_classification_grasp_target_received_at_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
+        }
+        const auto target_switch_started_at = now();
 
         if (!wait_for_box_target(box_class, target_switch_started_at, box_targets[box_index], error_message)) {
           finish_result(
@@ -2713,215 +3107,15 @@ private:
     const std::shared_ptr<GoalHandleExecuteTask> & goal_handle,
     std::string & error_message)
   {
-    const auto make_pose_for_offset =
-      [&](const TaskParameters & candidate_parameters, const XYZ & target_offset) {
-        TaskParameters local_parameters = candidate_parameters;
-        local_parameters.grasp_target_offset = target_offset;
-
-      Eigen::Isometry3d object_transform = Eigen::Isometry3d::Identity();
-      object_transform.translation().x() = parameters_.pickup_object.center.x;
-      object_transform.translation().y() = parameters_.pickup_object.center.y;
-      object_transform.translation().z() = parameters_.pickup_object.center.z;
-
-      const Eigen::Isometry3d grasp_frame_in_hand =
-        make_grasp_frame_transform(local_parameters);
-      const Eigen::Isometry3d hand_transform =
-        object_transform * grasp_frame_in_hand.inverse();
-
-      geometry_msgs::msg::PoseStamped pose;
-      pose.header.frame_id = candidate_parameters.planning_frame;
-      pose.pose.position.x = hand_transform.translation().x();
-      pose.pose.position.y = hand_transform.translation().y();
-      pose.pose.position.z = hand_transform.translation().z();
-      const Eigen::Quaterniond hand_orientation(hand_transform.rotation());
-      pose.pose.orientation.x = hand_orientation.x();
-      pose.pose.orientation.y = hand_orientation.y();
-      pose.pose.orientation.z = hand_orientation.z();
-      pose.pose.orientation.w = hand_orientation.w();
-      return pose;
-    };
-
-    const auto execute_pose_goal =
-      [&](
-        const geometry_msgs::msg::PoseStamped & pose,
-        const std::string & stage_name,
-        uint8_t feedback_stage) {
-        publish_feedback(
-          goal_handle,
-          feedback_stage,
-          stage_name);
-
-        RCLCPP_INFO(
-          get_logger(),
-          "%s pose in %s: position=(%.4f, %.4f, %.4f) orientation=(%.4f, %.4f, %.4f, %.4f)",
-          stage_name.c_str(),
-          pose.header.frame_id.c_str(),
-          pose.pose.position.x,
-          pose.pose.position.y,
-          pose.pose.position.z,
-          pose.pose.orientation.x,
-          pose.pose.orientation.y,
-          pose.pose.orientation.z,
-          pose.pose.orientation.w);
-
-        arm_move_group_->clearPoseTargets();
-        arm_move_group_->setStartStateToCurrentState();
-        arm_move_group_->setPoseTarget(pose, parameters_.hand_frame);
-
-        moveit::planning_interface::MoveGroupInterface::Plan plan;
-        const bool plan_success = static_cast<bool>(arm_move_group_->plan(plan));
-        if (!plan_success) {
-          arm_move_group_->clearPoseTargets();
-          error_message = "Failed to plan pose goal for stage '" + stage_name + "'.";
-          return false;
-        }
-
-        const auto execute_result = arm_move_group_->execute(plan);
-        arm_move_group_->clearPoseTargets();
-        if (execute_result.val != moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
-          error_message =
-            "Failed to execute pose goal for stage '" + stage_name + "' (MoveIt error code " +
-            std::to_string(execute_result.val) + ").";
-          return false;
-        }
-        return true;
-      };
-
-    std::vector<TaskParameters> direct_candidates;
-    const auto add_direct_candidate = [&](double yaw) {
-      const double normalized_yaw = normalize_angle(yaw);
-      const auto existing = std::find_if(
-        direct_candidates.begin(),
-        direct_candidates.end(),
-        [normalized_yaw](const TaskParameters & candidate) {
-          return std::abs(
-            normalize_angle(candidate.grasp_orientation.yaw - normalized_yaw)) < 1e-6;
-        });
-      if (existing != direct_candidates.end()) {
-        return;
-      }
-
-      TaskParameters candidate = parameters_;
-      candidate.grasp_orientation.yaw = normalized_yaw;
-      direct_candidates.push_back(candidate);
-    };
-
-    add_direct_candidate(parameters_.grasp_orientation.yaw);
-    for (const double yaw : parameters_.top_down_yaw_candidates) {
-      add_direct_candidate(yaw);
-    }
-    if (direct_candidates.empty()) {
-      direct_candidates.push_back(parameters_);
-    }
-
-    detach_pick_object_from_gazebo_link_attacher();
-    detach_pick_object_from_moveit();
-    stop_gripper_hold();
-
-    if (!parameters_.skip_open_gripper_stage) {
-      publish_feedback(
+    const auto direct_candidates = build_visual_style_pick_candidates(parameters_);
+    if (!execute_visual_style_pick_to_lift(
         goal_handle,
-        ExecuteTask::Goal::STAGE_OPENING_GRIPPER,
-        "Opening gripper");
-      if (parameters_.gripper_open_joint7 >= -0.5) {
-        publish_gripper_target(parameters_.gripper_open_joint7, 0.40);
-      } else {
-        if (!execute_named_gripper_target(
-            parameters_.gripper_open_named_target,
-            "opening",
-            error_message))
-        {
-          return false;
-        }
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(600));
-    }
-
-    bool reached_grasp = false;
-    for (std::size_t candidate_index = 0; candidate_index < direct_candidates.size();
-      ++candidate_index)
-    {
-      const auto & candidate = direct_candidates[candidate_index];
-      std::ostringstream candidate_label;
-      candidate_label << "candidate " << (candidate_index + 1) << "/" << direct_candidates.size()
-                      << " rpy=(" << std::fixed << std::setprecision(4)
-                      << candidate.grasp_orientation.roll << ", "
-                      << candidate.grasp_orientation.pitch << ", "
-                      << candidate.grasp_orientation.yaw << ")";
-      RCLCPP_INFO(
-        get_logger(),
-        "Trying direct visual pick %s",
-        candidate_label.str().c_str());
-
-      if (candidate.approach_max_distance > 1e-6 || candidate.approach_min_distance > 1e-6) {
-        if (!execute_pose_goal(
-            make_pose_for_offset(candidate, candidate.pregrasp_offset),
-            "Moving to pregrasp " + candidate_label.str(),
-            ExecuteTask::Goal::STAGE_MOVING_PREGRASP))
-        {
-          RCLCPP_WARN(
-            get_logger(),
-            "Pregrasp planning failed for direct visual pick %s, trying direct grasp.",
-            candidate_label.str().c_str());
-        }
-      }
-
-      if (execute_pose_goal(
-          make_pose_for_offset(candidate, candidate.grasp_target_offset),
-          "Moving to grasp " + candidate_label.str(),
-          ExecuteTask::Goal::STAGE_MOVING_GRASP))
-      {
-        reached_grasp = true;
-        break;
-      }
-
-      RCLCPP_WARN(
-        get_logger(),
-        "Direct visual pick %s failed before gripper close.",
-        candidate_label.str().c_str());
-    }
-
-    if (!reached_grasp) {
-      if (error_message.empty()) {
-        error_message = "Failed to plan pose goal for all direct visual pick candidates.";
-      }
-      return false;
-    }
-
-    publish_feedback(
-      goal_handle,
-      ExecuteTask::Goal::STAGE_CLOSING_GRIPPER,
-      "Closing gripper");
-    if (parameters_.gripper_close_joint7 >= -0.5) {
-      publish_gripper_target(parameters_.gripper_close_joint7, 0.50);
-    } else {
-      if (!execute_named_gripper_target(
-          parameters_.gripper_close_named_target,
-          "closing",
-          error_message))
-      {
-        return false;
-      }
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(800));
-
-    if (!attach_pick_object_to_moveit(error_message)) {
-      return false;
-    }
-    if (parameters_.enable_gazebo_attachment &&
-      !attach_pick_object_with_gazebo_link_attacher(error_message))
+        parameters_.pickup_object.center,
+        direct_candidates,
+        "direct visual pick",
+        error_message))
     {
       return false;
-    }
-
-    if (has_cartesian_distance(parameters_.lift_min_distance, parameters_.lift_max_distance)) {
-      publish_feedback(
-        goal_handle,
-        ExecuteTask::Goal::STAGE_LIFTING,
-        "Lifting object");
-      if (!execute_explicit_lift(goal_handle, error_message)) {
-        return false;
-      }
     }
 
     if (!execute_pre_place_alignment(goal_handle, error_message)) {
@@ -2957,10 +3151,12 @@ private:
     fixed_place_pose.pose.orientation.z = fixed_place_orientation.z();
     fixed_place_pose.pose.orientation.w = fixed_place_orientation.w();
 
-    if (!execute_pose_goal(
+    if (!execute_arm_pose_goal(
+        goal_handle,
         fixed_place_pose,
         "Moving to fixed place pose",
-        ExecuteTask::Goal::STAGE_MOVING_PLACE))
+        ExecuteTask::Goal::STAGE_MOVING_PLACE,
+        error_message))
     {
       if (parameters_.place_target.allow_direct_release_fallback) {
         RCLCPP_WARN(
@@ -3391,6 +3587,34 @@ private:
     return true;
   }
 
+  bool execute_visual_style_gripper_close(
+    const std::shared_ptr<GoalHandleExecuteTask> & goal_handle,
+    const std::string & feedback_message,
+    const std::string & action_label,
+    std::string & error_message)
+  {
+    if (goal_handle->is_canceling()) {
+      error_message = "Task canceled";
+      return false;
+    }
+
+    publish_feedback(
+      goal_handle,
+      ExecuteTask::Goal::STAGE_CLOSING_GRIPPER,
+      feedback_message);
+    if (parameters_.gripper_close_joint7 >= -0.5) {
+      publish_gripper_target(parameters_.gripper_close_joint7, 0.50);
+    } else if (!execute_named_gripper_target(
+        parameters_.gripper_close_named_target,
+        action_label,
+        error_message))
+    {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(800));
+    return true;
+  }
+
   bool execute_solution_with_contact_aware_gripper_close(
     const std::shared_ptr<GoalHandleExecuteTask> & goal_handle,
     const mtc::SolutionBase & solution,
@@ -3575,7 +3799,7 @@ private:
     std::string & error_message)
   {
     constexpr double kCloseStepJoint7 = 0.0040;
-    constexpr double kContactPreloadJoint7 = 0.0015;
+    constexpr double kContactPreloadJoint7 = 0.0040;
     constexpr double kReachTolerance = 0.0006;
     constexpr double kProgressEpsilon = 0.0002;
     constexpr double kCommandDurationSec = 0.40;
@@ -3587,16 +3811,16 @@ private:
       return false;
     }
 
-    const double final_target = std::clamp(parameters_.gripper_close_joint7, 0.0, 0.035);
+    const double final_target = normalize_direct_gripper_target(parameters_.gripper_close_joint7);
     double current_position = latest_joint7_position();
 
-    while (current_position - final_target > kReachTolerance) {
+    while (final_target - current_position > kReachTolerance) {
       if (goal_handle->is_canceling()) {
         error_message = "Task canceled";
         return false;
       }
 
-      const double commanded_target = std::max(final_target, current_position - kCloseStepJoint7);
+      const double commanded_target = std::min(final_target, current_position + kCloseStepJoint7);
       publish_gripper_target(commanded_target, kCommandDurationSec);
 
       const auto step_started_at = std::chrono::steady_clock::now();
@@ -3613,13 +3837,13 @@ private:
             std::chrono::duration<double>(kPollIntervalSec)));
 
         const double observed_position = latest_joint7_position();
-        if (observed_position <= commanded_target + kReachTolerance) {
+        if (observed_position >= commanded_target - kReachTolerance) {
           current_position = observed_position;
           reached_command = true;
           break;
         }
 
-        if (last_progress_position - observed_position > kProgressEpsilon) {
+        if (observed_position - last_progress_position > kProgressEpsilon) {
           last_progress_position = observed_position;
           last_progress_time = std::chrono::steady_clock::now();
         } else if (
@@ -3638,7 +3862,7 @@ private:
 
       if (stalled) {
         const double hold_target =
-          std::max(final_target, current_position - kContactPreloadJoint7);
+          std::min(final_target, current_position + kContactPreloadJoint7);
         start_gripper_hold(hold_target);
         if (!wait_for_gripper_hold_engaged(hold_target, 0.5, error_message)) {
           return false;
@@ -3783,6 +4007,25 @@ private:
     const std::string & action_label,
     std::string & error_message)
   {
+    if (named_target == "zero") {
+      std::string direct_error_message;
+      if (execute_direct_arm_joint_target(
+          {0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+          8.0,
+          20.0,
+          action_label,
+          direct_error_message))
+      {
+        return true;
+      }
+
+      RCLCPP_WARN(
+        get_logger(),
+        "Direct arm zero execution for '%s' failed: %s. Falling back to MoveIt named target.",
+        action_label.c_str(),
+        direct_error_message.c_str());
+    }
+
     arm_move_group_->clearPoseTargets();
     arm_move_group_->setStartStateToCurrentState();
     if (!arm_move_group_->setNamedTarget(named_target)) {
@@ -3809,19 +4052,96 @@ private:
     return true;
   }
 
+  bool execute_direct_arm_joint_target(
+    const std::vector<double> & joint_positions,
+    double duration_sec,
+    double goal_time_tolerance_sec,
+    const std::string & action_label,
+    std::string & error_message)
+  {
+    if (joint_positions.size() != 6U) {
+      error_message =
+        "Direct arm target for '" + action_label + "' must contain exactly 6 joint values.";
+      return false;
+    }
+
+    if (!arm_direct_trajectory_client_) {
+      error_message = "Direct arm trajectory client is not initialized.";
+      return false;
+    }
+
+    if (!arm_direct_trajectory_client_->wait_for_action_server(std::chrono::seconds(3))) {
+      error_message = "Arm controller action server is not available for '" + action_label + "'.";
+      return false;
+    }
+
+    FollowJointTrajectory::Goal goal;
+    goal.trajectory.joint_names = {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"};
+
+    trajectory_msgs::msg::JointTrajectoryPoint target_point;
+    target_point.positions = joint_positions;
+    target_point.time_from_start = rclcpp::Duration::from_seconds(
+      positive_or(duration_sec, 8.0));
+    goal.trajectory.points.push_back(std::move(target_point));
+    goal.goal_time_tolerance = rclcpp::Duration::from_seconds(
+      positive_or(goal_time_tolerance_sec, 20.0));
+
+    auto goal_handle_future = arm_direct_trajectory_client_->async_send_goal(goal);
+    if (goal_handle_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+      error_message =
+        "Timed out while sending direct arm target for '" + action_label + "'.";
+      return false;
+    }
+
+    auto goal_handle = goal_handle_future.get();
+    if (!goal_handle) {
+      error_message = "Arm controller rejected direct target for '" + action_label + "'.";
+      return false;
+    }
+
+    auto result_future = arm_direct_trajectory_client_->async_get_result(goal_handle);
+    const auto timeout = std::chrono::duration<double>(
+      positive_or(duration_sec, 8.0) + positive_or(goal_time_tolerance_sec, 20.0) + 5.0);
+    if (result_future.wait_for(timeout) != std::future_status::ready) {
+      arm_direct_trajectory_client_->async_cancel_goal(goal_handle);
+      error_message =
+        "Timed out waiting for direct arm target '" + action_label + "' to finish.";
+      return false;
+    }
+
+    const auto wrapped_result = result_future.get();
+    if (wrapped_result.code != rclcpp_action::ResultCode::SUCCEEDED || !wrapped_result.result) {
+      error_message =
+        "Direct arm target '" + action_label + "' did not finish successfully.";
+      return false;
+    }
+
+    if (wrapped_result.result->error_code != FollowJointTrajectory::Result::SUCCESSFUL) {
+      error_message =
+        "Direct arm target '" + action_label + "' failed: " +
+        wrapped_result.result->error_string;
+      return false;
+    }
+
+    return true;
+  }
+
   void publish_gripper_target(double joint7_target, double duration_sec)
   {
+    constexpr double kGripperCommandEffort = 3.0;
     moveit::planning_interface::MoveGroupInterface::Plan plan;
     auto & joint_trajectory = plan.trajectory_.joint_trajectory;
     joint_trajectory.joint_names = {"joint7"};
 
     auto start_point = trajectory_msgs::msg::JointTrajectoryPoint();
     start_point.positions = {std::clamp(latest_joint7_position(), -0.040, 0.0)};
+    start_point.effort = {kGripperCommandEffort};
     start_point.time_from_start = rclcpp::Duration::from_seconds(0.0);
     joint_trajectory.points.push_back(std::move(start_point));
 
     auto target_point = trajectory_msgs::msg::JointTrajectoryPoint();
     target_point.positions = {normalize_direct_gripper_target(joint7_target)};
+    target_point.effort = {kGripperCommandEffort};
     target_point.time_from_start = rclcpp::Duration::from_seconds(duration_sec);
     joint_trajectory.points.push_back(std::move(target_point));
 
@@ -3838,7 +4158,7 @@ private:
   {
     {
       std::lock_guard<std::mutex> lock(gripper_hold_mutex_);
-      gripper_hold_target_ = std::clamp(joint7_target, 0.0, 0.035);
+      gripper_hold_target_ = std::clamp(joint7_target, -0.040, 0.0);
       gripper_hold_active_ = true;
     }
     publish_active_gripper_hold();
@@ -3872,12 +4192,12 @@ private:
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
       const double observed_position = latest_joint7_position();
 
-      if (observed_position <= hold_target + 0.0008) {
+      if (observed_position >= hold_target - 0.0008) {
         return true;
       }
 
-      // If the gripper is still making inward progress, keep waiting for it to settle.
-      if (observed_position < last_position - 0.0001) {
+      // In this workspace, gripper closing moves joint7 toward zero from negative values.
+      if (observed_position > last_position + 0.0001) {
         last_position = observed_position;
         continue;
       }
@@ -4068,6 +4388,7 @@ private:
   rclcpp::CallbackGroup::SharedPtr action_callback_group_;
   rclcpp::CallbackGroup::SharedPtr gazebo_callback_group_;
   rclcpp_action::Server<ExecuteTask>::SharedPtr action_server_;
+  rclcpp_action::Client<FollowJointTrajectory>::SharedPtr arm_direct_trajectory_client_;
 #if defined(HAVE_LINKATTACHER_MSGS)
   rclcpp::Client<AttachLink>::SharedPtr gazebo_attach_link_client_;
   rclcpp::Client<DetachLink>::SharedPtr gazebo_detach_link_client_;
