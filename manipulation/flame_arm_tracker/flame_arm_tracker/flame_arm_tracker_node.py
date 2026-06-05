@@ -198,7 +198,7 @@ class FlameArmTracker(Node):
         )
         self.enable_service = self.create_service(
             SetBool,
-            "set_enabled",
+            "~/set_enabled",
             self.set_enabled_callback,
         )
 

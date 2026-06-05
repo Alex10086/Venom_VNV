@@ -953,26 +953,25 @@ def test_manipulation_action_stops_active_flame_tracking_before_sending_goal(mon
 
     assert result.success is True
     assert events == [
-        ('stop', 'before manipulation action', True),
+        ('stop', 'before manipulation action', False),
         ('action', 'CLASSIFY_PLATFORM_TO_COLOR_BOXES'),
     ]
 
 
-def test_manipulation_action_forces_flame_tracking_stop_even_when_blackboard_inactive(monkeypatch):
+def test_manipulation_action_skips_flame_tracking_stop_when_blackboard_inactive(monkeypatch):
     from venom_mission_commander import arm_task_client
 
     events = []
 
-    def fake_stop(node, blackboard, reason, force=False):
-        events.append(('stop', reason, force, dict(blackboard)))
-        return True, None
+    def unexpected_set_bool(node, service_name, enabled, service_wait_timeout_sec, call_timeout_sec):
+        raise AssertionError('inactive flame tracking must not require the flame tracker service')
 
     def fake_call(node, config):
         events.append(('action', config.task_type_name))
         result = SimpleNamespace(success=True, stage_reached=8, error_code=0, message='done')
         return result, None
 
-    monkeypatch.setattr(arm_task_client, 'stop_active_flame_tracking_if_needed', fake_stop)
+    monkeypatch.setattr(arm_task_client, 'call_set_bool_service', unexpected_set_bool)
     monkeypatch.setattr(arm_task_client, 'call_execute_task_action', fake_call)
     context = make_context({})
 
@@ -985,17 +984,15 @@ def test_manipulation_action_forces_flame_tracking_stop_even_when_blackboard_ina
     )
 
     assert result.success is True
-    assert events == [
-        ('stop', 'before manipulation action', True, {}),
-        ('action', 'PICK_AND_PLACE_LATEST_TARGET'),
-    ]
+    assert events == [('action', 'PICK_AND_PLACE_LATEST_TARGET')]
 
 
-def test_manipulation_action_fails_when_forced_flame_stop_fails(monkeypatch):
+def test_manipulation_action_fails_when_active_flame_stop_fails(monkeypatch):
     from venom_mission_commander import arm_task_client
 
     def fake_stop(node, blackboard, reason, force=False):
-        assert force is True
+        assert blackboard['flame_tracking_active'] is True
+        assert force is False
         return False, 'service call timeout: /flame_arm_tracker/set_enabled'
 
     def unexpected_action(node, config):
@@ -1003,7 +1000,7 @@ def test_manipulation_action_fails_when_forced_flame_stop_fails(monkeypatch):
 
     monkeypatch.setattr(arm_task_client, 'stop_active_flame_tracking_if_needed', fake_stop)
     monkeypatch.setattr(arm_task_client, 'call_execute_task_action', unexpected_action)
-    context = make_context({})
+    context = make_context({'flame_tracking_active': True})
 
     result = arm_task_client.execute_manipulation_action_task(
         context.node,

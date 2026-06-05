@@ -46,7 +46,7 @@ waypoints:
         target_class: fire
         min_confidence: 0.45
         min_consecutive_detections: 1
-        timeout_sec: 5.0
+        timeout_sec: 60.0
         output_key: flame_detection
 
       - name: stop_flame_tracking
