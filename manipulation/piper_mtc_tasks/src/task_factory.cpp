@@ -5,7 +5,12 @@
 #include <moveit/task_constructor/solvers/pipeline_planner.h>
 #include <moveit/task_constructor/stages/current_state.h>
 #include <moveit/task_constructor/stages/move_to.h>
+
+#if __has_include(<moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>)
 #include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
+#else
+#include <moveit/trajectory_processing/time_optimal_trajectory_generation.h>
+#endif
 
 #include "piper_mtc_tasks/gripper_stage_builder.hpp"
 #include "piper_mtc_tasks/pick_task.hpp"

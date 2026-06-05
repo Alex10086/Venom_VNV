@@ -22,7 +22,13 @@
 #include <moveit/task_constructor/stage.h>
 #include <moveit/task_constructor/storage.h>
 #include <moveit/task_constructor/task.h>
+
+#if __has_include(<moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>)
 #include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
+#else
+#include <moveit/trajectory_processing/time_optimal_trajectory_generation.h>
+#endif
+
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <control_msgs/control_msgs/action/follow_joint_trajectory.hpp>
 #include <moveit_task_constructor_msgs/msg/solution.hpp>
@@ -54,6 +60,18 @@ namespace piper_mtc_tasks
 
 namespace
 {
+
+template<typename PlanT>
+auto mutable_plan_trajectory(PlanT & plan) -> decltype((plan.trajectory))
+{
+  return plan.trajectory;
+}
+
+template<typename PlanT>
+auto mutable_plan_trajectory(PlanT & plan) -> decltype((plan.trajectory_))
+{
+  return plan.trajectory_;
+}
 
 double choose_nearest_bounded_angle(
   double current_angle,
@@ -4130,7 +4148,7 @@ private:
   {
     constexpr double kGripperCommandEffort = 3.0;
     moveit::planning_interface::MoveGroupInterface::Plan plan;
-    auto & joint_trajectory = plan.trajectory.joint_trajectory;
+    auto & joint_trajectory = mutable_plan_trajectory(plan).joint_trajectory;
     joint_trajectory.joint_names = {"joint7"};
 
     auto start_point = trajectory_msgs::msg::JointTrajectoryPoint();
