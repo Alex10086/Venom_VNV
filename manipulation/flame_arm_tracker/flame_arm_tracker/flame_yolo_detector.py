@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -208,7 +209,7 @@ class FlameYoloDetector(Node):
         )
 
     def _resolve_model_path(self, model_path: str) -> Path:
-        path = Path(model_path).expanduser()
+        path = Path(os.path.expandvars(os.path.expanduser(model_path)))
         if path.is_absolute() or path.exists():
             return path
         return Path(get_package_share_directory("flame_arm_tracker")) / path

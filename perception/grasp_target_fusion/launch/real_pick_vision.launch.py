@@ -66,6 +66,9 @@ def generate_launch_description():
         )
     )
     mtc_params = os.path.join(mtc_share, "config", "real_pick_task.yaml")
+    default_classification_yolo_model_path = os.path.join(
+        os.path.expanduser("~"), "venom_ws", "models", "yolo", "box.pt"
+    )
 
     return LaunchDescription([
         DeclareLaunchArgument("camera_namespace", default_value="camera"),
@@ -120,7 +123,7 @@ def generate_launch_description():
         DeclareLaunchArgument("pick_yolo_debug_topic", default_value="/perception/pick/debug/yolo_result"),
         DeclareLaunchArgument(
             "classification_yolo_model_path",
-            default_value="/home/chfyx/Downloads/box.pt",
+            default_value=default_classification_yolo_model_path,
         ),
         DeclareLaunchArgument("classification_yolo_allowed_classes", default_value="black_box,golden_box"),
         DeclareLaunchArgument("classification_yolo_min_confidence", default_value="0.5"),
