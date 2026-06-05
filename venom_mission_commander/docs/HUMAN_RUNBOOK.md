@@ -64,11 +64,49 @@ CRAIC2026 规则描述两圈逻辑：第一圈探索未知环境、识别减速�
 7. 启动 mission_commander，指定 competition_10x6_arm_mission.yaml
 ```
 
+### 4.1 Hunter SE + MID360 + Nav2/TEB
+
+比赛链路按“两阶段”使用：先建静态图，再用静态图定位和导航。不要在
+`mission_commander` 固定 waypoint 任务运行时继续在线建图，否则 `map`
+坐标系会随 SLAM 优化漂移，YAML 里的任务点物理含义会变。
+
+第一阶段：建图调试和保存地图。
+
+```bash
+cd "$HOME/venom_ws"
+
+./src/venom_vnv/venom_bringup/scripts/start_hunter_mid360_mapping.sh
+
+# 建图完成后，在另一个终端保存静态地图；文件名前缀按现场命名调整。
+source install/setup.bash
+ros2 run nav2_map_server map_saver_cli -f \
+  "$HOME/venom_ws/src/venom_vnv/venom_bringup/map/competition_10x6"
+```
+
+第二阶段：比赛导航。默认地图 YAML 是第一阶段保存并经过现场标定的
+`venom_bringup/map/competition_10x6.yaml`；这个入口启动 MID360、
+Point-LIO、Hunter 底盘、AMCL/map_server、Nav2/TEB，但不启动
+`mission_commander`。临时测试其他地图时仍可用 `MAP=/path/to/map.yaml`
+覆盖默认值。
+
+```bash
+cd "$HOME/venom_ws"
+
+./src/venom_vnv/venom_bringup/scripts/start_hunter_mid360_nav2_teb.sh
+```
+
+TF 归属必须保持单一：AMCL 发布 `map -> odom`，Point-LIO 发布
+`odom -> base_link`，Hunter 轮速里程计只保留在
+`hunter_odom -> hunter_base_link` / `hunter_odom` 话题用于监控，不参与主 TF。
+RViz 小目标能稳定到达后，再启动第 6 节的 `mission_commander`。
+
 ## 5. 关键接口检查
 
 | 功能 | 必要接口 | 快速检查 |
 | --- | --- | --- |
 | Nav2 导航 | Nav2 `BasicNavigator.goToPose()` 背后的 action/services | RViz 手动发目标；看 `[STARTUP] navigator_ready` |
+| Hunter 静态图定位 | `map -> odom -> base_link` 唯一 TF 链 | `ros2 run tf2_ros tf2_echo map base_link` |
+| Hunter 控制链路 | Nav2/velocity smoother 到 Hunter 的 `/cmd_vel` | `ros2 topic info /cmd_vel -v`，确认没有 teleop/测试节点抢发 |
 | 读表服务（比赛/standalone） | `/perception/read_printed_number` | `ros2 service list \| grep /perception/read_printed_number` |
 | 读表服务（一键验证 launch 内部） | `/perception/verification/read_printed_number` | `ros2 service list \| grep /perception/verification/read_printed_number` |
 | 读表图像 | `/tmp/venom_meter_images` 下成功图片 | 识别成功后检查 `*_success.jpg` |

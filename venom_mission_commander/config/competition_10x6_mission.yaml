@@ -5,7 +5,7 @@
 map:
   name: competition_10x6
   frame_id: map
-  source: rm_nav_bringup/map/competition_10x6.yaml
+  source: venom_bringup/map/competition_10x6.yaml
   note: Rough field layout from image-derived coordinates; replace waypoints after RViz/Gazebo validation.
 
 mission:

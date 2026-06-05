@@ -23,7 +23,7 @@
 map:
   name: competition_10x6
   frame_id: map
-  source: rm_nav_bringup/map/competition_10x6.yaml
+  source: venom_bringup/map/competition_10x6.yaml
 
 mission:
   id: competition_10x6_arm_mission_commander

@@ -4,7 +4,7 @@
 map:
   name: competition_10x6
   frame_id: map
-  source: rm_nav_bringup/map/competition_10x6.yaml
+  source: venom_bringup/map/competition_10x6.yaml
   note: Replace x/y/yaw after RViz or field calibration.
 
 mission:

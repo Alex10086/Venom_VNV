@@ -12,9 +12,10 @@ def generate_launch_description():
     venom_bringup_dir = get_package_share_directory("venom_bringup")
 
     use_rviz = LaunchConfiguration("rviz")
+    livox_user_config = LaunchConfiguration("livox_user_config")
     point_lio_cfg = LaunchConfiguration("point_lio_cfg")
 
-    livox_user_config = os.path.join(
+    default_livox_user_config = os.path.join(
         venom_bringup_dir, "config", "examples", "MID360_config.json"
     )
     default_point_lio_cfg = os.path.join(
@@ -24,6 +25,11 @@ def generate_launch_description():
 
     declare_rviz = DeclareLaunchArgument(
         "rviz", default_value="true", description="Launch RViz if true."
+    )
+    declare_livox_user_config = DeclareLaunchArgument(
+        "livox_user_config",
+        default_value=default_livox_user_config,
+        description="Path to Livox MID360 user config json.",
     )
     declare_point_lio_cfg = DeclareLaunchArgument(
         "point_lio_cfg",
@@ -70,6 +76,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             declare_rviz,
+            declare_livox_user_config,
             declare_point_lio_cfg,
             livox_driver,
             point_lio,

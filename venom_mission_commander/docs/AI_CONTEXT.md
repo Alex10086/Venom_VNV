@@ -149,6 +149,12 @@ mission_config semantic check
 
 Current real backend preflight focuses on flame tracking service/status topic and flame detection topic. It does not prove target acquisition or full backend health; task execution still enforces its own timeouts.
 
+Hunter SE real-robot navigation is an external bringup concern. Use
+`venom_bringup/scripts/start_hunter_mid360_mapping.sh` only to create/save a
+static map, and `venom_bringup/scripts/start_hunter_mid360_nav2_teb.sh` to run
+static-map AMCL + Nav2/TEB before commander starts. Do not move this startup
+logic into `mission_commander.py` or `navigator.py`.
+
 Flame tracking safety:
 
 - If the mission uses service-backed `track_flame`, commander tries to stop tracking on startup, navigation failure, task failure, mission completion and shutdown.
@@ -164,6 +170,7 @@ Flame tracking safety:
 | Add new task type | `task_plugins.py` + helper file + `MISSION_SCHEMA.md` | Overloading unrelated task type |
 | Add startup graph check | `startup_checks.py` | Blocking inside `MissionCommander.configure()` |
 | Change blackboard key | YAML + helper + `MISSION_SCHEMA.md` | Implicit key changes without docs |
+| Adjust Hunter navigation bringup | `venom_bringup/config/hunter_se/*.yaml` and `venom_bringup/scripts/start_hunter_mid360_*.sh` | Starting chassis/LiDAR/Nav2 inside commander |
 
 ## 9. Test and cleanup guidance
 
