@@ -74,6 +74,11 @@ ros2 launch venom_bringup mid360_point_lio.launch.py "rviz:=$POINT_LIO_RVIZ" &
 PIDS+=("$!")
 
 sleep 8
+# 临时修正：将 base_link 旋转 180° 得到 base_link_corrected，使红色箭头指向车头
+echo "Publishing correction TF from base_link to base_link_corrected..."
+ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 3.14159 base_link base_link_corrected &
+PIDS+=("$!")
+sleep 1
 
 # 2. /cloud_registered 转 /scan。
 echo "Starting pointcloud_to_laserscan..."
@@ -116,6 +121,7 @@ PIDS+=("$!")
 sleep 2
 
 # 5. Nav2。controller 输出经 velocity_smoother 发布到 /cmd_vel，Hunter 订阅 /cmd_vel。
+
 echo "Starting Nav2 with $NAV2_PARAMS..."
 ros2 launch nav2_bringup navigation_launch.py \
     use_sim_time:=False \

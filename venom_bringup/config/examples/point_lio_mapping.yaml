@@ -60,8 +60,8 @@
             gravity: [ 0.0, 0.0, -9.810 ]                   # Gravity vector used by the estimator state.
             gravity_init: [ 0.0, 0.0, -9.810 ]              # Initial gravity guess used during startup alignment.
             extrinsic_T: [ -0.011, -0.02329, 0.04412 ]      # LiDAR translation in the IMU/body frame, in meters.
-            extrinsic_R: [ 1.0, 0.0, 0.0,
-                           0.0, 1.0, 0.0,
+            extrinsic_R: [ -1.0, 0.0, 0.0,
+                           0.0, -1.0, 0.0,
                            0.0, 0.0, 1.0 ]                 # LiDAR rotation in the IMU/body frame, stored as a row-major rotation matrix.
 
         odometry:
