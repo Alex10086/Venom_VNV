@@ -68,7 +68,7 @@ Task chain highlights:
 
 - Point 1: `grasp_item` → `/manipulation/execute_task` → `PICK_AND_PLACE_LATEST_TARGET` → `blackboard["grasped_object"]`.
 - Point 2: `read_meter` → `/perception/read_printed_number` in competition/standalone configs, or `/perception/verification/read_printed_number` in one-shot meter verification launches → `meter_reading`; then `host_report`; then `voice_report`; then `track_flame mode=start`.
-- Point 3: `track_flame mode=stop`; then `detect_flame` waits on `/perception/detections_2d_array`.
+- Point 3: `track_flame mode=stop`; then `detect_flame` waits on `/perception/flame/detections_2d_array`.
 - Point 4: `classify_place` → `/manipulation/execute_task` → `CLASSIFY_PLATFORM_TO_COLOR_BOXES` → `blackboard["last_placement"]`.
 
 ## 4. Task plugin contract
@@ -128,7 +128,7 @@ Prefer serializable dicts for new keys unless the immediate next task must consu
 | `host_report` | `host_report_task.execute_file_host_report()` | local files under `/tmp/venom_host_reports` |
 | `voice_report` | `voice_report_task.execute_command_voice_report()` | local command, CRAIC config uses `$HOME/venom_ws/scripts/speak_meter_wav.sh`; command paths expand `$HOME`/environment variables at runtime |
 | `track_flame` | `arm_task_client.execute_flame_tracking_task()` | `SetBool` service `/flame_arm_tracker/set_enabled` + status topic `/flame_arm_tracker/status` |
-| `detect_flame` | `arm_task_client.wait_for_flame_detection_task()` | topic `/perception/detections_2d_array` |
+| `detect_flame` | `arm_task_client.wait_for_flame_detection_task()` | topic `/perception/flame/detections_2d_array` |
 
 Related external packages:
 

@@ -66,10 +66,6 @@ def generate_launch_description():
         )
     )
     mtc_params = os.path.join(mtc_share, "config", "real_pick_task.yaml")
-    default_classification_yolo_model_path = os.path.join(
-        os.path.expanduser("~"), "venom_ws", "models", "yolo", "box.pt"
-    )
-
     return LaunchDescription([
         DeclareLaunchArgument("camera_namespace", default_value="camera"),
         DeclareLaunchArgument("camera_name", default_value="d435i"),
@@ -79,7 +75,7 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_depth", default_value="true"),
         DeclareLaunchArgument("enable_gyro", default_value="false"),
         DeclareLaunchArgument("enable_accel", default_value="false"),
-        DeclareLaunchArgument("can_port", default_value="can0"),
+        DeclareLaunchArgument("can_port", default_value="can_piper"),
         DeclareLaunchArgument("auto_enable", default_value="true"),
         DeclareLaunchArgument("gripper_exist", default_value="true"),
         DeclareLaunchArgument("gripper_val_mutiple", default_value="2"),
@@ -99,8 +95,8 @@ def generate_launch_description():
         DeclareLaunchArgument("launch_yolo_bridge", default_value="true"),
         DeclareLaunchArgument("launch_pick_yolo_detector", default_value=LaunchConfiguration("launch_yolo_detector")),
         DeclareLaunchArgument("launch_pick_yolo_bridge", default_value=LaunchConfiguration("launch_yolo_bridge")),
-        DeclareLaunchArgument("launch_classification_yolo_detector", default_value="true"),
-        DeclareLaunchArgument("launch_classification_yolo_bridge", default_value="true"),
+        DeclareLaunchArgument("launch_classification_yolo_detector", default_value="false"),
+        DeclareLaunchArgument("launch_classification_yolo_bridge", default_value="false"),
         DeclareLaunchArgument("launch_color_box_detector", default_value="false"),
         DeclareLaunchArgument("launch_flame_tracking", default_value="false"),
         DeclareLaunchArgument("flame_use_yolo", default_value="true"),
@@ -123,7 +119,7 @@ def generate_launch_description():
         DeclareLaunchArgument("pick_yolo_debug_topic", default_value="/perception/pick/debug/yolo_result"),
         DeclareLaunchArgument(
             "classification_yolo_model_path",
-            default_value=default_classification_yolo_model_path,
+            default_value="",
         ),
         DeclareLaunchArgument("classification_yolo_allowed_classes", default_value="black_box,golden_box"),
         DeclareLaunchArgument("classification_yolo_min_confidence", default_value="0.5"),

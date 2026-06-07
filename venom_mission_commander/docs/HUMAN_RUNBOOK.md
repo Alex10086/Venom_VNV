@@ -75,7 +75,7 @@ CRAIC2026 规则描述两圈逻辑：第一圈探索未知环境、识别减速�
 | 图像回传 | `/tmp/venom_host_reports` | 目录可写，生成 `metadata.json` / `receipt.json` |
 | 语音播报 | `$HOME/venom_ws/scripts/speak_meter_wav.sh` | `scripts/speak_meter_wav.sh 1234` |
 | 机械臂任务 | `/manipulation/execute_task` | `ros2 action list \| grep execute_task` |
-| 火焰检测 | `/perception/detections_2d_array` | `ros2 topic echo /perception/detections_2d_array` |
+| 火焰检测 | `/perception/flame/detections_2d_array` | `ros2 topic echo /perception/flame/detections_2d_array` |
 | 火焰追踪 | `/flame_arm_tracker/set_enabled`、`/flame_arm_tracker/status` | `ros2 service list` 和 status echo |
 
 ## 6. 启动 commander
@@ -131,8 +131,11 @@ source install/setup.bash
 
 ```bash
 ros2 launch grasp_target_fusion real_pick_vision.launch.py \
+  can_port:=can_piper \
   launch_flame_tracking:=false \
   launch_color_box_detector:=false \
+  launch_classification_yolo_detector:=false \
+  launch_classification_yolo_bridge:=false \
   target_class:=bottle \
   yolo_allowed_classes:=bottle \
   yolo_min_confidence:=0.7
@@ -143,6 +146,11 @@ ros2 launch grasp_target_fusion real_pick_vision.launch.py \
 ```bash
 yolo_model_path:=$HOME/venom_ws/models/yolo/<your_pick_model>.pt
 ```
+
+注意：
+
+- 现在这条 launch 默认按 `can_piper` 连接机械臂；如果你的机械臂仍然挂在 `can0`，请显式改成 `can_port:=can0`
+- 抓取链已经启用单目标保护；同类目标同时出现在画面里时，`/perception/pick/target_valid` 会变成 `false`
 
 运行 verify：
 
@@ -238,17 +246,19 @@ ros2 launch venom_mission_commander meter_digit_voice_host_report_verification.l
 
 #### 三号点：`verify_point3_flame_tracking.yaml`
 
-依赖：D435i、Piper joint state/command、flame detector、`/flame_arm_tracker/set_enabled`、`/flame_arm_tracker/status`、`/perception/detections_2d_array`。
+依赖：D435i、Piper joint state/command、flame detector、`/flame_arm_tracker/set_enabled`、`/flame_arm_tracker/status`、`/perception/flame/detections_2d_array`。
 
 推荐用 `real_pick_vision.launch.py` 带起相机、Piper 和 flame tracker，但关闭普通抓取 YOLO，避免和 flame detector 混用输出：
 
 ```bash
 ros2 launch grasp_target_fusion real_pick_vision.launch.py \
+  can_port:=can_piper \
   launch_yolo_detector:=false \
   launch_yolo_bridge:=false \
+  launch_classification_yolo_detector:=false \
+  launch_classification_yolo_bridge:=false \
   launch_flame_tracking:=true \
-  flame_use_yolo:=true \
-  target_class:=fire
+  flame_use_yolo:=true
 ```
 
 运行 verify：
@@ -266,9 +276,18 @@ ros2 launch venom_mission_commander mission_commander.launch.py \
 
 ```bash
 ros2 launch grasp_target_fusion real_pick_vision.launch.py \
+  can_port:=can_piper \
   launch_color_box_detector:=true \
-  launch_flame_tracking:=false
+  launch_flame_tracking:=false \
+  launch_classification_yolo_detector:=true \
+  launch_classification_yolo_bridge:=true \
+  classification_yolo_model_path:=$HOME/venom_ws/models/yolo/<your_classify_model>.pt
 ```
+
+注意：
+
+- `classification_yolo_model_path` 现在没有内置默认模型路径，四号点必须显式传入
+- 如果只想验证分类投放，不建议同时开启 flame tracking
 
 运行 verify：
 

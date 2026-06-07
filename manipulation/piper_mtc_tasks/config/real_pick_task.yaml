@@ -89,7 +89,7 @@ pick_place_server:
       grasp_target_topic: /perception/pick/grasp_target
       target_valid_topic: /perception/pick/target_valid
       require_single_target: true
-      require_valid_signal: false
+      require_valid_signal: true
       target_timeout_sec: 120.0
       wait_after_home_timeout_sec: 45.0
       min_target_confidence: 0.7

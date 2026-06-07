@@ -50,7 +50,7 @@ def generate_launch_description():
         default_value="false",
         description="Launch the real Piper hardware control node with the correct joint-state remaps.",
     )
-    declare_can_port = DeclareLaunchArgument("can_port", default_value="can0")
+    declare_can_port = DeclareLaunchArgument("can_port", default_value="can_piper")
     declare_auto_enable = DeclareLaunchArgument("auto_enable", default_value="false")
     declare_gripper_exist = DeclareLaunchArgument("gripper_exist", default_value="true")
     declare_gripper_val_mutiple = DeclareLaunchArgument("gripper_val_mutiple", default_value="2")
