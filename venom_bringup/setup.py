@@ -1,19 +1,51 @@
-from setuptools import find_packages, setup
 from glob import glob
 import os
 from typing import List, Sequence, Tuple
 
+from setuptools import find_packages, setup
+
+
 package_name = 'venom_bringup'
+package_root = os.path.dirname(os.path.realpath(__file__))
+setup_cwd = os.getcwd()
+
 DataFile = Tuple[str, Sequence[str]]
 
 
+def package_path(*parts: str) -> str:
+    return os.path.join(package_root, *parts)
+
+
+def path_for_setup(path: str) -> str:
+    return os.path.relpath(path, setup_cwd)
+
+
+def required_package_files(*relative_paths: str) -> List[str]:
+    paths = [package_path(path) for path in relative_paths]
+    missing = [path for path in paths if not os.path.isfile(path)]
+    if missing:
+        raise RuntimeError('Missing package data files: ' + ', '.join(missing))
+    return [path_for_setup(path) for path in paths]
+
+
+def collect_flat_data_files(relative_dir: str, patterns: Sequence[str]) -> List[DataFile]:
+    source_dir = package_path(relative_dir)
+    files: List[str] = []
+    for pattern in patterns:
+        files.extend(sorted(glob(os.path.join(source_dir, pattern))))
+    if not files:
+        return []
+    install_dir = os.path.join('share', package_name, relative_dir)
+    return [(install_dir, [path_for_setup(path) for path in files])]
+
+
 def collect_config_data_files() -> List[DataFile]:
-    config_root = 'config'
+    config_root = package_path('config')
     data_files: List[DataFile] = []
     for root, _, _ in os.walk(config_root):
         yaml_files = sorted(glob(os.path.join(root, '*.yaml')))
         json_files = sorted(glob(os.path.join(root, '*.json')))
-        files = yaml_files + json_files
+        files = [path_for_setup(path) for path in yaml_files + json_files]
         if not files:
             continue
         rel_root = os.path.relpath(root, config_root)
@@ -25,10 +57,10 @@ def collect_config_data_files() -> List[DataFile]:
 
 
 def collect_launch_data_files() -> List[DataFile]:
-    launch_root = 'launch'
+    launch_root = package_path('launch')
     data_files: List[DataFile] = []
     for root, _, _ in os.walk(launch_root):
-        py_files = sorted(glob(os.path.join(root, '*.py')))
+        py_files = [path_for_setup(path) for path in sorted(glob(os.path.join(root, '*.py')))]
         if not py_files:
             continue
         rel_root = os.path.relpath(root, launch_root)
@@ -40,24 +72,16 @@ def collect_launch_data_files() -> List[DataFile]:
 
 
 def collect_map_data_files() -> List[DataFile]:
-    map_files = (
-        sorted(glob(os.path.join('map', '*.yaml'))) +
-        sorted(glob(os.path.join('map', '*.pgm')))
-    )
-    if not map_files:
-        return []
-    return [(os.path.join('share', package_name, 'map'), map_files)]
+    return collect_flat_data_files('map', ('*.yaml', '*.pgm'))
 
 
 data_files: List[DataFile] = [
     ('share/ament_index/resource_index/packages',
-        ['resource/' + package_name]),
-    ('share/' + package_name, ['package.xml']),
-    (os.path.join('share', package_name, 'rviz_cfg'),
-        sorted(glob('rviz_cfg/*.rviz'))),
-    (os.path.join('share', package_name, 'scripts'),
-        sorted(glob('scripts/*.sh'))),
+        required_package_files('resource/' + package_name)),
+    ('share/' + package_name, required_package_files('package.xml')),
 ]
+data_files += collect_flat_data_files('rviz_cfg', ('*.rviz',))
+data_files += collect_flat_data_files('scripts', ('*.sh',))
 data_files += collect_launch_data_files()
 data_files += collect_config_data_files()
 data_files += collect_map_data_files()
