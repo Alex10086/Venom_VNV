@@ -3249,6 +3249,7 @@ private:
   void handle_target_valid(const std_msgs::msg::Bool::SharedPtr message)
   {
     std::lock_guard<std::mutex> lock(vision_target_mutex_);
+    latest_target_valid_received_ = true;
     latest_target_valid_ = message->data;
   }
 
@@ -3514,9 +3515,27 @@ private:
       return false;
     }
 
+    if ((parameters_.vision_target.require_valid_signal ||
+      parameters_.vision_target.require_single_target) &&
+      !latest_target_valid_received_)
+    {
+      if (error_message != nullptr) {
+        *error_message = "No visual target validity signal has been received yet.";
+      }
+      return false;
+    }
+
     if (parameters_.vision_target.require_valid_signal && !latest_target_valid_) {
       if (error_message != nullptr) {
         *error_message = "Latest visual target is currently marked invalid.";
+      }
+      return false;
+    }
+
+    if (parameters_.vision_target.require_single_target && !latest_target_valid_) {
+      if (error_message != nullptr) {
+        *error_message =
+          "Single-target gating rejected the latest visual target because fusion marked it invalid.";
       }
       return false;
     }
@@ -4413,6 +4432,7 @@ private:
   bool gripper_hold_active_{false};
   double gripper_hold_target_{0.0};
   double latest_joint7_position_{0.0};
+  bool latest_target_valid_received_{false};
   bool latest_target_valid_{false};
   bool latest_classification_target_valid_{false};
   std::optional<GraspTarget> latest_grasp_target_;
