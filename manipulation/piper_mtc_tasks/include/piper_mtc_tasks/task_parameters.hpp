@@ -133,7 +133,8 @@ struct ClassificationPlaceConfig
 
 struct RepeatVisualPickConfig
 {
-  std::string target_class{"bottle"};
+  std::string target_class{"black_block"};
+  std::vector<std::string> target_classes;
   std::vector<int64_t> place_indices{0, 1};
   std::string target_fusion_node_name{"/grasp_target_fusion"};
   bool set_fusion_target_class{true};
