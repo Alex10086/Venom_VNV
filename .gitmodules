@@ -42,7 +42,8 @@
 	url = https://github.com/Venom-Algorithm/venom_nav_simulation.git
 [submodule "perception/yolo_detector"]
 	path = perception/yolo_detector
-	url = https://github.com/Venom-Algorithm/yolo_detector.git
+	url = https://github.com/lzx2530/yolo_detector.git
+	branch = venom-manipulation-sync
 [submodule "planning/navigation/ego-planner-swarm"]
 	path = planning/navigation/ego-planner-swarm
 	url = https://github.com/ZJU-FAST-Lab/ego-planner-swarm.git
