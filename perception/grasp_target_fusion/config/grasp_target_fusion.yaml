@@ -11,8 +11,8 @@ grasp_target_fusion:
     debug_topic: /perception/pick/grasp_target_debug
     min_confidence: 0.5
     target_class: black_block
-    use_detection_header_stamp: false
-    require_single_target: false
+    use_detection_header_stamp: true
+    require_single_target: true
     default_target_size_xyz: [0.045, 0.045, 0.06]
     depth_roi_half_width_px: 8
     max_detection_age_sec: 8.0
@@ -30,12 +30,12 @@ pick_grasp_target_fusion:
     target_valid_topic: /perception/pick/target_valid
     debug_topic: /perception/pick/grasp_target_debug
     min_confidence: 0.5
-    target_class: bottle
+    target_class: black_block
     use_detection_header_stamp: false
     require_single_target: false
     default_target_size_xyz: [0.045, 0.045, 0.06]
     depth_roi_half_width_px: 8
-    max_detection_age_sec: 8.0
+    max_detection_age_sec: 20.0
     depth_scale: 0.001
 
 classify_grasp_target_fusion:
@@ -55,5 +55,5 @@ classify_grasp_target_fusion:
     require_single_target: false
     default_target_size_xyz: [0.045, 0.045, 0.06]
     depth_roi_half_width_px: 8
-    max_detection_age_sec: 8.0
+    max_detection_age_sec: 30.0
     depth_scale: 0.001

@@ -18,10 +18,6 @@ _site/
 site/
 .venv-docs/
 
-# Local model weights
-models/
-*.pt
-
 # Editor and IDE
 .vscode/
 .idea/
@@ -44,3 +40,5 @@ COLCON_IGNORE
 
 # Local model weights; package deployable model artifacts explicitly if needed
 *.pt
+!perception/grasp_target_fusion/models/block_best.pt
+!perception/grasp_target_fusion/models/box_best.pt

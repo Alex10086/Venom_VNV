@@ -50,6 +50,32 @@ def generate_launch_description():
     fusion_config = os.path.join(fusion_share, "config", "grasp_target_fusion.yaml")
     color_box_config = os.path.join(flame_share, "config", "color_box_detection.yaml")
     flame_tracking_config = os.path.join(flame_share, "config", "flame_tracking.yaml")
+    workspace_pick_model = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "models",
+            "block_best.pt",
+        )
+    )
+    pick_model_path = (
+        workspace_pick_model
+        if os.path.exists(workspace_pick_model)
+        else os.path.join(fusion_share, "models", "block_best.pt")
+    )
+    workspace_classification_model = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "models",
+            "box_best.pt",
+        )
+    )
+    classification_model_path = (
+        workspace_classification_model
+        if os.path.exists(workspace_classification_model)
+        else os.path.join(fusion_share, "models", "box_best.pt")
+    )
     workspace_handeye_file = os.path.abspath(
         os.path.join(
             os.path.dirname(__file__),
@@ -66,9 +92,6 @@ def generate_launch_description():
         )
     )
     mtc_params = os.path.join(mtc_share, "config", "real_pick_task.yaml")
-    default_classification_yolo_model_path = os.path.join(
-        os.path.expanduser("~"), "venom_ws", "models", "yolo", "box.pt"
-    )
 
     return LaunchDescription([
         DeclareLaunchArgument("camera_namespace", default_value="camera"),
@@ -106,14 +129,14 @@ def generate_launch_description():
         DeclareLaunchArgument("flame_use_yolo", default_value="true"),
         DeclareLaunchArgument("flame_params_file", default_value=flame_tracking_config),
         DeclareLaunchArgument("launch_repeat_visual_pick", default_value="false"),
-        DeclareLaunchArgument("target_class", default_value="bottle"),
+        DeclareLaunchArgument("target_class", default_value="black_block"),
         DeclareLaunchArgument("classification_target_class", default_value="black_box,golden_box"),
         DeclareLaunchArgument("place_indices", default_value="0,1"),
         DeclareLaunchArgument(
             "yolo_model_path",
-            default_value="yolov8n.pt",
+            default_value=pick_model_path,
         ),
-        DeclareLaunchArgument("yolo_allowed_classes", default_value="bottle"),
+        DeclareLaunchArgument("yolo_allowed_classes", default_value="black_block,golden_block"),
         DeclareLaunchArgument("yolo_min_confidence", default_value="0.7"),
         DeclareLaunchArgument("yolo_image_topic", default_value="/camera/d435i/color/image_raw"),
         DeclareLaunchArgument("pick_yolo_model_path", default_value=LaunchConfiguration("yolo_model_path")),
@@ -123,7 +146,7 @@ def generate_launch_description():
         DeclareLaunchArgument("pick_yolo_debug_topic", default_value="/perception/pick/debug/yolo_result"),
         DeclareLaunchArgument(
             "classification_yolo_model_path",
-            default_value=default_classification_yolo_model_path,
+            default_value=classification_model_path,
         ),
         DeclareLaunchArgument("classification_yolo_allowed_classes", default_value="black_box,golden_box"),
         DeclareLaunchArgument("classification_yolo_min_confidence", default_value="0.5"),
@@ -187,7 +210,13 @@ def generate_launch_description():
             executable="grasp_target_fusion",
             name="classify_grasp_target_fusion",
             output="screen",
-            parameters=[fusion_config, {"target_class": LaunchConfiguration("classification_target_class")}],
+            parameters=[
+                fusion_config,
+                {
+                    "target_class": LaunchConfiguration("classification_target_class"),
+                    "min_confidence": LaunchConfiguration("classification_yolo_min_confidence"),
+                },
+            ],
         ),
         Node(
             package="flame_arm_tracker",
@@ -216,6 +245,7 @@ def generate_launch_description():
                     "image_topic": LaunchConfiguration("yolo_image_topic"),
                     "output_topic": LaunchConfiguration("pick_yolo_output_topic"),
                     "annotated_image_topic": LaunchConfiguration("pick_yolo_debug_topic"),
+                    "confidence_threshold": LaunchConfiguration("pick_yolo_min_confidence"),
                 }
             ],
             condition=IfCondition(LaunchConfiguration("launch_pick_yolo_detector")),
@@ -248,6 +278,7 @@ def generate_launch_description():
                     "image_topic": LaunchConfiguration("yolo_image_topic"),
                     "output_topic": LaunchConfiguration("classification_yolo_output_topic"),
                     "annotated_image_topic": LaunchConfiguration("classification_yolo_debug_topic"),
+                    "confidence_threshold": LaunchConfiguration("classification_yolo_min_confidence"),
                 }
             ],
             condition=IfCondition(LaunchConfiguration("launch_classification_yolo_detector")),
