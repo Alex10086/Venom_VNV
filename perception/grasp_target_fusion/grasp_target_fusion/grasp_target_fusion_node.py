@@ -3,6 +3,7 @@ from typing import Optional
 
 import numpy as np
 import rclpy
+from builtin_interfaces.msg import Time as TimeMsg
 from geometry_msgs.msg import PointStamped, Vector3
 from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
@@ -170,6 +171,10 @@ class GraspTargetFusionNode(Node):
         if not self.has_valid_detection():
             return
 
+        target_time = self.latest_detection_stamp
+        if target_time is None:
+            target_time = self.get_clock().now()
+
         depth_m = self.lookup_depth_meters(
             self.latest_detection.center_x,
             self.latest_detection.center_y,
@@ -207,7 +212,7 @@ class GraspTargetFusionNode(Node):
             transform = self.tf_buffer.lookup_transform(
                 self.planning_frame,
                 self.camera_frame,
-                rclpy.time.Time(),
+                target_time,
             )
         except TransformException as exc:
             self.get_logger().warn(f"Grasp target debug: TF lookup failed: {exc}")
@@ -239,7 +244,7 @@ class GraspTargetFusionNode(Node):
         self.debug_publisher.publish(debug_message)
 
         target = GraspTarget()
-        target.header.stamp = self.get_clock().now().to_msg()
+        target.header.stamp = self.to_msg_time(target_time)
         target.header.frame_id = self.planning_frame
         target.class_name = self.latest_detection.class_name
         target.confidence = self.latest_detection.confidence
@@ -360,13 +365,21 @@ class GraspTargetFusionNode(Node):
         x = (center_x - cx) * depth_m / fx
         y = (center_y - cy) * depth_m / fy
 
+        point_time = self.latest_detection_stamp
+        if point_time is None:
+            point_time = self.get_clock().now()
+
         point = PointStamped()
-        point.header.stamp = self.get_clock().now().to_msg()
+        point.header.stamp = self.to_msg_time(point_time)
         point.header.frame_id = self.camera_frame
         point.point.x = float(x)
         point.point.y = float(y)
         point.point.z = float(depth_m)
         return point
+
+    @staticmethod
+    def to_msg_time(time_value: rclpy.time.Time) -> TimeMsg:
+        return time_value.to_msg()
 
     def publish_target_valid(self, value: bool) -> None:
         message = Bool()

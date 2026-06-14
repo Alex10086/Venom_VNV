@@ -1,7 +1,8 @@
 ik_frame_sweep:
   ros__parameters:
+    planning_frame: piper_base_link
     arm_group_name: arm
-    hand_frame: gripper_grasp_center
+    hand_frame: piper_gripper_grasp_center
     check_table_collision: true
     ik_timeout_sec: 0.05
     max_results: 30

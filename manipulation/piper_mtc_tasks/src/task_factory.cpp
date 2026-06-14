@@ -300,7 +300,10 @@ void declare_task_parameters(rclcpp::Node & node)
     "classification_place.target_fusion_node_name", "/grasp_target_fusion");
   node.declare_parameter<bool>("classification_place.set_fusion_target_class", true);
   node.declare_parameter<double>("classification_place.target_switch_settle_sec", 0.20);
-  node.declare_parameter<std::string>("repeat_visual_pick.target_class", "bottle");
+  node.declare_parameter<std::string>("repeat_visual_pick.target_class", "black_block");
+  node.declare_parameter<std::vector<std::string>>(
+    "repeat_visual_pick.target_classes",
+    std::vector<std::string>{});
   node.declare_parameter<std::vector<int64_t>>(
     "repeat_visual_pick.place_indices",
     std::vector<int64_t>{0, 1});
@@ -637,6 +640,8 @@ TaskParameters load_task_parameters(rclcpp::Node & node)
     node.get_parameter("classification_place.target_switch_settle_sec").as_double();
   parameters.repeat_visual_pick.target_class =
     node.get_parameter("repeat_visual_pick.target_class").as_string();
+  parameters.repeat_visual_pick.target_classes =
+    node.get_parameter("repeat_visual_pick.target_classes").as_string_array();
   parameters.repeat_visual_pick.place_indices =
     node.get_parameter("repeat_visual_pick.place_indices").as_integer_array();
   parameters.repeat_visual_pick.target_fusion_node_name =

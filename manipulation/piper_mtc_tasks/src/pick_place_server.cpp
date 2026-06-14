@@ -1592,6 +1592,33 @@ private:
     });
   }
 
+  bool has_visual_style_ik(
+    const geometry_msgs::msg::PoseStamped & pose,
+    const std::string & label)
+  {
+    arm_move_group_->clearPoseTargets();
+    arm_move_group_->clearPathConstraints();
+    arm_move_group_->setStartStateToCurrentState();
+    const bool solved = arm_move_group_->setJointValueTarget(pose, parameters_.hand_frame);
+    arm_move_group_->clearPoseTargets();
+    if (!solved) {
+      RCLCPP_INFO(
+        get_logger(),
+        "Skipping visual-style pick %s: no IK for pose in %s position=(%.4f, %.4f, %.4f) "
+        "orientation=(%.4f, %.4f, %.4f, %.4f)",
+        label.c_str(),
+        pose.header.frame_id.c_str(),
+        pose.pose.position.x,
+        pose.pose.position.y,
+        pose.pose.position.z,
+        pose.pose.orientation.x,
+        pose.pose.orientation.y,
+        pose.pose.orientation.z,
+        pose.pose.orientation.w);
+    }
+    return solved;
+  }
+
   void rebuild_factory_from_parameters()
   {
     auto node_handle = rclcpp::Node::SharedPtr(this, [](rclcpp::Node *) {});
@@ -1747,14 +1774,20 @@ private:
     const TaskParameters & base_parameters) const
   {
     std::vector<TaskParameters> candidates;
-    const auto add_candidate = [&](double yaw) {
+    const auto add_candidate = [&](double yaw, const XYZ & grasp_offset, const XYZ & pregrasp_offset) {
       const double normalized_yaw = normalize_angle(yaw);
       const auto existing = std::find_if(
         candidates.begin(),
         candidates.end(),
-        [normalized_yaw](const TaskParameters & candidate) {
+        [normalized_yaw, &grasp_offset, &pregrasp_offset](const TaskParameters & candidate) {
           return std::abs(
-            normalize_angle(candidate.grasp_orientation.yaw - normalized_yaw)) < 1e-6;
+            normalize_angle(candidate.grasp_orientation.yaw - normalized_yaw)) < 1e-6 &&
+                 std::abs(candidate.grasp_target_offset.x - grasp_offset.x) < 1e-6 &&
+                 std::abs(candidate.grasp_target_offset.y - grasp_offset.y) < 1e-6 &&
+                 std::abs(candidate.grasp_target_offset.z - grasp_offset.z) < 1e-6 &&
+                 std::abs(candidate.pregrasp_offset.x - pregrasp_offset.x) < 1e-6 &&
+                 std::abs(candidate.pregrasp_offset.y - pregrasp_offset.y) < 1e-6 &&
+                 std::abs(candidate.pregrasp_offset.z - pregrasp_offset.z) < 1e-6;
         });
       if (existing != candidates.end()) {
         return;
@@ -1762,16 +1795,112 @@ private:
 
       TaskParameters candidate = base_parameters;
       candidate.grasp_orientation.yaw = normalized_yaw;
+      candidate.grasp_target_offset = grasp_offset;
+      candidate.pregrasp_offset = pregrasp_offset;
       candidates.push_back(candidate);
     };
 
-    add_candidate(base_parameters.grasp_orientation.yaw);
+    std::vector<double> yaws;
+    append_unique_angle_candidate(yaws, base_parameters.grasp_orientation.yaw);
     for (const double yaw : base_parameters.top_down_yaw_candidates) {
-      add_candidate(yaw);
+      append_unique_angle_candidate(yaws, yaw);
+    }
+
+    const auto grasp_strategy =
+      normalize_class_name(base_parameters.vision_target.grasp_strategy);
+    std::vector<std::pair<XYZ, XYZ>> offset_pairs{
+      {base_parameters.grasp_target_offset, base_parameters.pregrasp_offset}};
+    const auto contains_offset_pair = [](const std::vector<std::pair<XYZ, XYZ>> & values,
+        const XYZ & grasp_offset,
+        const XYZ & pregrasp_offset) {
+        constexpr double kEpsilon = 1e-6;
+        return std::any_of(values.begin(), values.end(), [&](const auto & value) {
+          return std::abs(value.first.x - grasp_offset.x) < kEpsilon &&
+                 std::abs(value.first.y - grasp_offset.y) < kEpsilon &&
+                 std::abs(value.first.z - grasp_offset.z) < kEpsilon &&
+                 std::abs(value.second.x - pregrasp_offset.x) < kEpsilon &&
+                 std::abs(value.second.y - pregrasp_offset.y) < kEpsilon &&
+                 std::abs(value.second.z - pregrasp_offset.z) < kEpsilon;
+        });
+      };
+    if (base_parameters.vision_target.compute_grasp_offsets && grasp_strategy == "radial_side") {
+      const XYZ & direction = base_parameters.approach_direction;
+      const double direction_norm =
+        std::sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
+      XYZ unit_direction{1.0, 0.0, 0.0};
+      if (direction_norm > 1e-6) {
+        unit_direction = {
+          direction.x / direction_norm,
+          direction.y / direction_norm,
+          direction.z / direction_norm};
+      }
+
+      const double base_radius = std::sqrt(
+        base_parameters.grasp_target_offset.x * base_parameters.grasp_target_offset.x +
+        base_parameters.grasp_target_offset.y * base_parameters.grasp_target_offset.y);
+      const double base_pregrasp_distance = std::max(
+        0.0,
+        -(
+          (base_parameters.pregrasp_offset.x - base_parameters.grasp_target_offset.x) *
+          unit_direction.x +
+          (base_parameters.pregrasp_offset.y - base_parameters.grasp_target_offset.y) *
+          unit_direction.y +
+          (base_parameters.pregrasp_offset.z - base_parameters.grasp_target_offset.z) *
+          unit_direction.z));
+      const double base_grasp_z = base_parameters.grasp_target_offset.z;
+
+      const std::vector<double> radial_offsets{
+        base_radius,
+        2.0 * base_radius,
+        0.0,
+        -base_radius};
+      const std::vector<double> frame_z_offsets{
+        base_grasp_z - 0.06,
+        base_grasp_z - 0.09,
+        base_grasp_z - 0.03,
+        base_grasp_z,
+        base_grasp_z + 0.03};
+      const std::vector<double> pregrasp_distances{
+        0.5 * base_pregrasp_distance,
+        0.03,
+        0.0,
+        base_pregrasp_distance};
+
+      offset_pairs.clear();
+      for (const double radial_offset : radial_offsets) {
+        for (const double frame_z_offset : frame_z_offsets) {
+          const XYZ grasp_offset{
+            unit_direction.x * radial_offset,
+            unit_direction.y * radial_offset,
+            frame_z_offset};
+          for (const double pregrasp_distance : pregrasp_distances) {
+            const double distance = std::max(0.0, pregrasp_distance);
+            const XYZ pregrasp_offset{
+              grasp_offset.x - unit_direction.x * distance,
+              grasp_offset.y - unit_direction.y * distance,
+              grasp_offset.z - unit_direction.z * distance};
+            if (!contains_offset_pair(offset_pairs, grasp_offset, pregrasp_offset)) {
+              offset_pairs.push_back({grasp_offset, pregrasp_offset});
+            }
+          }
+        }
+      }
+    }
+
+    for (const double yaw : yaws) {
+      for (const auto & offset_pair : offset_pairs) {
+        add_candidate(yaw, offset_pair.first, offset_pair.second);
+      }
     }
     if (candidates.empty()) {
       candidates.push_back(base_parameters);
     }
+    RCLCPP_INFO(
+      get_logger(),
+      "Built %zu visual-style pick candidates from %zu yaw and %zu offset-pair candidates.",
+      candidates.size(),
+      yaws.size(),
+      offset_pairs.size());
     return candidates;
   }
 
@@ -1924,10 +2053,24 @@ private:
         object_center.y,
         object_center.z);
 
+      const auto grasp_pose =
+        make_visual_style_pick_pose(object_center, candidate, candidate.grasp_target_offset);
+      if (!has_visual_style_ik(grasp_pose, candidate_label.str() + " grasp")) {
+        continue;
+      }
+
       if (candidate.approach_max_distance > 1e-6 || candidate.approach_min_distance > 1e-6) {
+        const auto pregrasp_pose =
+          make_visual_style_pick_pose(object_center, candidate, candidate.pregrasp_offset);
+        if (!has_visual_style_ik(pregrasp_pose, candidate_label.str() + " pregrasp")) {
+          RCLCPP_INFO(
+            get_logger(),
+            "Pregrasp IK failed for visual-style pick %s, trying direct grasp.",
+            candidate_label.str().c_str());
+        } else
         if (!execute_arm_pose_goal(
             goal_handle,
-            make_visual_style_pick_pose(object_center, candidate, candidate.pregrasp_offset),
+            pregrasp_pose,
             "Moving to pregrasp " + candidate_label.str(),
             ExecuteTask::Goal::STAGE_MOVING_PREGRASP,
             error_message))
@@ -1941,7 +2084,7 @@ private:
 
       if (execute_arm_pose_goal(
           goal_handle,
-          make_visual_style_pick_pose(object_center, candidate, candidate.grasp_target_offset),
+          grasp_pose,
           "Moving to grasp " + candidate_label.str(),
           ExecuteTask::Goal::STAGE_MOVING_GRASP,
           error_message))
@@ -2195,39 +2338,62 @@ private:
         "repeat_visual_pick.place_indices is empty.");
       return;
     }
-    if (config.target_class.empty()) {
+    if (config.target_class.empty() && config.target_classes.empty()) {
       finish_failure(
         ExecuteTask::Goal::STAGE_FAILED,
         ExecuteTask::Result::ERROR_NOT_READY,
-        "repeat_visual_pick.target_class is empty.");
+        "repeat_visual_pick.target_class and repeat_visual_pick.target_classes are empty.");
+      return;
+    }
+    if (!config.target_classes.empty() &&
+      config.target_classes.size() != 1 &&
+      config.target_classes.size() != config.place_indices.size())
+    {
+      finish_failure(
+        ExecuteTask::Goal::STAGE_FAILED,
+        ExecuteTask::Result::ERROR_NOT_READY,
+        "repeat_visual_pick.target_classes must contain one class or match place_indices length.");
       return;
     }
 
     try {
-      publish_feedback(
-        goal_handle,
-        ExecuteTask::Goal::STAGE_WAITING_FOR_TARGET,
-        "Setting repeat visual pick target class to " + config.target_class);
-      if (!set_fusion_target_class(
-          config.target_class,
-          config.target_fusion_node_name,
-          config.set_fusion_target_class,
-          config.target_switch_settle_sec,
-          error_message))
-      {
-        finish_failure(
-          ExecuteTask::Goal::STAGE_WAITING_FOR_TARGET,
-          ExecuteTask::Result::ERROR_NOT_READY,
-          error_message);
-        return;
-      }
-
       for (std::size_t index = 0; index < config.place_indices.size(); ++index) {
         if (goal_handle->is_canceling()) {
           finish_failure(
             ExecuteTask::Goal::STAGE_FAILED,
             ExecuteTask::Result::ERROR_CANCELED,
             "Repeat visual pick task canceled.");
+          return;
+        }
+
+        const std::string target_class =
+          config.target_classes.empty() ?
+          config.target_class :
+          config.target_classes[config.target_classes.size() == 1 ? 0 : index];
+        if (target_class.empty()) {
+          finish_failure(
+            ExecuteTask::Goal::STAGE_FAILED,
+            ExecuteTask::Result::ERROR_NOT_READY,
+            "repeat_visual_pick target class for index " + std::to_string(index) + " is empty.");
+          return;
+        }
+        publish_feedback(
+          goal_handle,
+          ExecuteTask::Goal::STAGE_WAITING_FOR_TARGET,
+          "Repeat visual pick " + std::to_string(index + 1) + "/" +
+          std::to_string(config.place_indices.size()) +
+          ": setting target class to " + target_class);
+        if (!set_fusion_target_class(
+            target_class,
+            config.target_fusion_node_name,
+            config.set_fusion_target_class,
+            config.target_switch_settle_sec,
+            error_message))
+        {
+          finish_failure(
+            ExecuteTask::Goal::STAGE_WAITING_FOR_TARGET,
+            ExecuteTask::Result::ERROR_NOT_READY,
+            error_message);
           return;
         }
 
@@ -3267,6 +3433,7 @@ private:
   void handle_target_valid(const std_msgs::msg::Bool::SharedPtr message)
   {
     std::lock_guard<std::mutex> lock(vision_target_mutex_);
+    latest_target_valid_received_ = true;
     latest_target_valid_ = message->data;
   }
 
@@ -3532,9 +3699,27 @@ private:
       return false;
     }
 
+    if ((parameters_.vision_target.require_valid_signal ||
+      parameters_.vision_target.require_single_target) &&
+      !latest_target_valid_received_)
+    {
+      if (error_message != nullptr) {
+        *error_message = "No visual target validity signal has been received yet.";
+      }
+      return false;
+    }
+
     if (parameters_.vision_target.require_valid_signal && !latest_target_valid_) {
       if (error_message != nullptr) {
         *error_message = "Latest visual target is currently marked invalid.";
+      }
+      return false;
+    }
+
+    if (parameters_.vision_target.require_single_target && !latest_target_valid_) {
+      if (error_message != nullptr) {
+        *error_message =
+          "Single-target gating rejected the latest visual target because fusion marked it invalid.";
       }
       return false;
     }
@@ -4431,6 +4616,7 @@ private:
   bool gripper_hold_active_{false};
   double gripper_hold_target_{0.0};
   double latest_joint7_position_{0.0};
+  bool latest_target_valid_received_{false};
   bool latest_target_valid_{false};
   bool latest_classification_target_valid_{false};
   std::optional<GraspTarget> latest_grasp_target_;

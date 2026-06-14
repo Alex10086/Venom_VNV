@@ -34,7 +34,7 @@ pick_place_server:
     diagnostic_ik_only: false
     pick_only: true
     use_direct_visual_pick_fallback: true
-    top_down_strategy_enabled: false
+    top_down_strategy_enabled: true
     move_home_before_pick: true
     enable_gazebo_attachment: false
     gazebo_attach_object_model: redbull_can
@@ -45,30 +45,30 @@ pick_place_server:
     joint_state_max_age_sec: 1.0
     joint_state_wait_timeout_sec: 8.0
     tcp_offset_xyz: [0.0, 0.0, -0.0758]
-    grasp_target_offset_xyz: [0.0, 0.0, 0.020]
-    pregrasp_offset_xyz: [0.0, 0.0, 0.070]
-    approach_direction_xyz: [0.0, 0.0, 1.0]
+    grasp_target_offset_xyz: [-0.030, 0.0, 0.020]
+    pregrasp_offset_xyz: [-0.100, 0.0, 0.020]
+    approach_direction_xyz: [1.0, 0.0, 0.0]
     lift_direction_xyz: [0.0, 0.0, 1.0]
     retreat_direction_xyz: [0.0, 0.0, 1.0]
     grasp_orientation_rpy: [0.0, -1.57079632679, 0.0]
-    top_down_grasp_target_x_candidates: [0.0]
+    top_down_grasp_target_x_candidates: [-0.030]
     top_down_grasp_target_y_candidates: [0.0]
-    top_down_grasp_target_z_candidates: [0.000, 0.010, 0.020, 0.030, 0.040]
-    top_down_pregrasp_x_candidates: [0.0]
+    top_down_grasp_target_z_candidates: [0.020]
+    top_down_pregrasp_x_candidates: [-0.100]
     top_down_pregrasp_y_candidates: [0.0]
-    top_down_pregrasp_z_candidates: [0.060, 0.070, 0.080]
+    top_down_pregrasp_z_candidates: [0.020]
     top_down_approach_direction_candidates:
-      - 0.0
-      - 0.0
       - 1.0
+      - 0.0
+      - 0.0
     top_down_roll_candidates: [0.0]
     top_down_pitch_candidates: [-1.57079632679]
     top_down_yaw_candidates:
-      - -1.57079632679
-      - -0.78539816339
+      - -0.3490658504
+      - -0.1745329252
       - 0.0
-      - 0.78539816339
-      - 1.57079632679
+      - 0.1745329252
+      - 0.3490658504
     place_target:
       offset_xyz: [0.0, 0.0, 0.0]
       release_height: 0.10
@@ -94,16 +94,20 @@ pick_place_server:
       wait_after_home_timeout_sec: 45.0
       min_target_confidence: 0.7
       compute_grasp_offsets: true
-      lock_lateral_offsets_to_zero: false
-      default_target_size_xyz: [0.044, 0.044, 0.10]
+      lock_lateral_offsets_to_zero: true
+      default_target_size_xyz: [0.044, 0.044, 0.044]
       target_position_bias_xyz: [0.125, 0.0, 0.0]
-      pregrasp_distance: 0.0
+      pregrasp_distance: 0.07
+      grasp_clearance: 0.01
+      grasp_z_offset: 0.0
+      collision_scale_xy: 0.85
+      collision_scale_z: 0.90
       workspace_min_xyz: [0.10, -0.35, 0.03]
       workspace_max_xyz: [0.60, 0.35, 0.40]
       yaw_candidate_offsets: [0.0, -0.1745329252, 0.1745329252, -0.3490658504, 0.3490658504]
       grasp_strategy: radial_side
       object_shape: cylinder
-      allowed_target_classes: [black_block, white_block, black, white, can, redbull, block, cylinder, bottle]
+      allowed_target_classes: [black_block, golden_block, white_block, black, golden, white, can, redbull, block, cylinder]
     observe_pose:
       enabled: true
       xyz: [0.0, 0.24, 0.37]
@@ -111,8 +115,8 @@ pick_place_server:
     classification_place:
       enabled: true
       # Payload tray order after the collection task:
-      #   slot 0 = first bottle, dropped into black_box
-      #   slot 1 = second bottle, dropped into golden_box
+      #   slot 0 = black_block, dropped into black_box
+      #   slot 1 = golden_block, dropped into golden_box
       platform_slots_xyz:
         - -0.10
         - -0.30
@@ -120,7 +124,7 @@ pick_place_server:
         - 0.0
         - -0.30
         - 0.26
-      platform_slot_classes: [bottle, bottle]
+      platform_slot_classes: [black_block, golden_block]
       box_classes: [black_box, golden_box]
       pregrasp_offset_xyz: [0.0, 0.0, 0.07]
       lift_offset_xyz: [0.0, 0.0, 0.07]
@@ -153,7 +157,8 @@ pick_place_server:
       set_fusion_target_class: true
       target_switch_settle_sec: 0.20
     repeat_visual_pick:
-      target_class: bottle
+      target_class: black_block
+      target_classes: [black_block, golden_block]
       place_indices: [0, 1]
       target_fusion_node_name: /pick_grasp_target_fusion
       set_fusion_target_class: true
@@ -167,7 +172,7 @@ pick_place_server:
       heading_offset: 2.21429743559
       base_joint_name: joint1
       min_delta: 0.02
-      coarse_base_first: true
+      coarse_base_first: false
       retract_joint3_name: joint3
       retract_joint4_name: joint4
       retract_joint3_delta: -0.30
