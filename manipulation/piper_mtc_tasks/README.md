@@ -36,23 +36,31 @@
 - `driver/piper_ros`
 - `third_party/IFRA_LinkAttacher`
 
-当前仓库通过 superproject 记录 `driver/piper_ros` 的具体提交，建议直接按当前分支记录的子模块版本初始化，不要手动切到别的主仓库分支或随意改子模块分支：
+当前仓库的 `.gitmodules` 已经把 `driver/piper_ros` 指到：
+
+- `git@github.com:lzx2530/piper_ros.git`
+
+并且当前效果对应的 `piper_ros` 分支是：
+
+- `venom-manipulation-sync`
+
+如果你是从 fork 拉代码，建议这样初始化：
 
 ```bash
 cd ~/venom_ws/src
 git clone --recurse-submodules git@github.com:lzx2530/Venom_VNV.git venom_vnv
 cd venom_vnv
-git checkout merge-piper
+git checkout develop_moveit
 git submodule sync --recursive
 git submodule update --init --recursive
 ```
 
-如果 `driver/piper_ros` 状态漂移了，优先把它同步回当前 superproject 记录的提交：
+如果 `driver/piper_ros` 没有切到对应分支，可手动执行：
 
 ```bash
-cd ~/venom_ws/src/venom_vnv
-git submodule sync --recursive
-git submodule update --init driver/piper_ros
+cd ~/venom_ws/src/venom_vnv/driver/piper_ros
+git fetch origin
+git switch venom-manipulation-sync
 ```
 
 ## 编译

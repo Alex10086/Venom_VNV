@@ -22,13 +22,7 @@
 #include <moveit/task_constructor/stage.h>
 #include <moveit/task_constructor/storage.h>
 #include <moveit/task_constructor/task.h>
-
-#if __has_include(<moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>)
-#include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
-#else
-#include <moveit/trajectory_processing/time_optimal_trajectory_generation.h>
-#endif
-
+#include <moveit/trajectory_processing/iterative_time_parameterization.h>
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <control_msgs/control_msgs/action/follow_joint_trajectory.hpp>
 #include <moveit_task_constructor_msgs/msg/solution.hpp>
@@ -60,18 +54,6 @@ namespace piper_mtc_tasks
 
 namespace
 {
-
-template<typename PlanT>
-auto mutable_plan_trajectory(PlanT & plan) -> decltype((plan.trajectory))
-{
-  return plan.trajectory;
-}
-
-template<typename PlanT>
-auto mutable_plan_trajectory(PlanT & plan) -> decltype((plan.trajectory_))
-{
-  return plan.trajectory_;
-}
 
 double choose_nearest_bounded_angle(
   double current_angle,
@@ -1129,7 +1111,7 @@ private:
       }
 
       auto & solutions = task.solutions();
-      trajectory_processing::TimeOptimalTrajectoryGeneration time_parameterization;
+      trajectory_processing::IterativeParabolicTimeParameterization time_parameterization;
       const std::size_t retimed_count = retime_solution_trajectories(
         *const_cast<mtc::SolutionBase *>(solutions.front().get()),
         time_parameterization,
@@ -1395,7 +1377,7 @@ private:
         }
 
         auto & place_solutions = place_task.solutions();
-        trajectory_processing::TimeOptimalTrajectoryGeneration place_time_parameterization;
+        trajectory_processing::IterativeParabolicTimeParameterization place_time_parameterization;
         const std::size_t place_retimed_count = retime_solution_trajectories(
           *const_cast<mtc::SolutionBase *>(place_solutions.front().get()),
           place_time_parameterization,
@@ -1987,7 +1969,7 @@ private:
       parameters_.arm_group_name);
     trajectory.setRobotTrajectoryMsg(*current_state, trajectory_message);
 
-    trajectory_processing::TimeOptimalTrajectoryGeneration time_parameterization;
+    trajectory_processing::IterativeParabolicTimeParameterization time_parameterization;
     if (!time_parameterization.computeTimeStamps(
         trajectory,
         parameters_.cartesian_velocity_scaling,
@@ -3220,7 +3202,7 @@ private:
       parameters_.arm_group_name);
     retreat_trajectory.setRobotTrajectoryMsg(*current_state, trajectory_message);
 
-    trajectory_processing::TimeOptimalTrajectoryGeneration time_parameterization;
+    trajectory_processing::IterativeParabolicTimeParameterization time_parameterization;
     if (!time_parameterization.computeTimeStamps(
         retreat_trajectory,
         parameters_.cartesian_velocity_scaling,
@@ -3974,7 +3956,7 @@ private:
       parameters_.arm_group_name);
     lift_trajectory.setRobotTrajectoryMsg(*current_state, trajectory_message);
 
-    trajectory_processing::TimeOptimalTrajectoryGeneration time_parameterization;
+    trajectory_processing::IterativeParabolicTimeParameterization time_parameterization;
     if (!time_parameterization.computeTimeStamps(
         lift_trajectory,
         parameters_.cartesian_velocity_scaling,
@@ -4333,7 +4315,7 @@ private:
   {
     constexpr double kGripperCommandEffort = 3.0;
     moveit::planning_interface::MoveGroupInterface::Plan plan;
-    auto & joint_trajectory = mutable_plan_trajectory(plan).joint_trajectory;
+    auto & joint_trajectory = plan.trajectory_.joint_trajectory;
     joint_trajectory.joint_names = {"joint7"};
 
     auto start_point = trajectory_msgs::msg::JointTrajectoryPoint();

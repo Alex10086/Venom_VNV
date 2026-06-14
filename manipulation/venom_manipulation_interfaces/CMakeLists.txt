@@ -15,7 +15,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Detection2D.msg"
   "msg/Detection2DArray.msg"
   "msg/GraspTarget.msg"
-  "msg/FlameTrackerStatus.msg"
   DEPENDENCIES
     geometry_msgs
     std_msgs

@@ -5,12 +5,7 @@
 #include <moveit/task_constructor/solvers/pipeline_planner.h>
 #include <moveit/task_constructor/stages/current_state.h>
 #include <moveit/task_constructor/stages/move_to.h>
-
-#if __has_include(<moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>)
-#include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
-#else
-#include <moveit/trajectory_processing/time_optimal_trajectory_generation.h>
-#endif
+#include <moveit/trajectory_processing/iterative_time_parameterization.h>
 
 #include "piper_mtc_tasks/gripper_stage_builder.hpp"
 #include "piper_mtc_tasks/pick_task.hpp"
@@ -696,17 +691,17 @@ PlannerBundle TaskFactory::create_planners() const
 {
   PlannerBundle planners;
   auto time_parameterization =
-    std::make_shared<trajectory_processing::TimeOptimalTrajectoryGeneration>();
+    std::make_shared<trajectory_processing::IterativeParabolicTimeParameterization>();
 
-  const auto pipeline_name = parameters_.pipeline_planner_id.empty() ?
-    std::string{"ompl"} : parameters_.pipeline_planner_id;
   planners.pipeline =
-    std::make_shared<mtc::solvers::PipelinePlanner>(node_, pipeline_name);
+    std::make_shared<mtc::solvers::PipelinePlanner>(node_);
+  planners.pipeline->setPlannerId(parameters_.pipeline_planner_id);
   planners.pipeline->setTimeParameterization(time_parameterization);
 
   planners.cartesian =
     std::make_shared<mtc::solvers::CartesianPath>();
   planners.cartesian->setStepSize(parameters_.cartesian_step_size);
+  planners.cartesian->setJumpThreshold(parameters_.cartesian_jump_threshold);
   planners.cartesian->setMaxVelocityScalingFactor(
     parameters_.cartesian_velocity_scaling);
   planners.cartesian->setMaxAccelerationScalingFactor(
