@@ -125,7 +125,7 @@ detect_flame, track_flame, classify_place, wait
 | `backend` | `mock` | all | `mock` / `action` / `execute_task` / `manipulation` |
 | `source` | `detected_item` | mock | 读取 blackboard 的目标 key |
 | `action_name` | `/manipulation/execute_task` | action | `ExecuteTask` action 名 |
-| `task_type_name` | plugin default | action | action goal 常量名；`grasp_item` 默认为 `PICK_AND_PLACE_LATEST_TARGET` |
+| `task_type_name` | plugin default | action | action goal 常量名；`grasp_item` plugin 默认 `PICK_AND_PLACE_LATEST_TARGET`，CRAIC2026 一号点覆盖为 `REPEAT_VISUAL_PICK_TO_PAYLOAD` |
 | `task_type_value` | unset | action | 直接指定 action goal uint8 值，优先级低于 name 解析逻辑 |
 | `timeout_sec` | `60.0` | action | action 总超时 |
 | `server_wait_timeout_sec` | `2.0` | action | 等待 action server 可用的时间 |
@@ -133,16 +133,19 @@ detect_flame, track_flame, classify_place, wait
 | `retry_backoff_sec` | `0.5` | action | 重试间隔 |
 | `output_key` | `grasped_object` | all | 写入 blackboard 的 key |
 
-CRAIC2026 point 1 uses:
+CRAIC2026 point 1 uses the piper repeat visual pick path to load black/golden targets into the payload tray. Commander still uses the existing `grasp_item` action backend and only changes the `ExecuteTask` goal constant:
 
 ```yaml
 type: grasp_item
 backend: action
 action_name: /manipulation/execute_task
-task_type_name: PICK_AND_PLACE_LATEST_TARGET
-timeout_sec: 90.0
+task_type_name: REPEAT_VISUAL_PICK_TO_PAYLOAD
+timeout_sec: 300.0
+retry_count: 0
 output_key: grasped_object
 ```
+
+The repeat target classes and payload slot order live in `piper_mtc_tasks` config, not in commander YAML. Keep commander `retry_count: 0` for this path so a partial payload load is not retried blindly after one object has already moved.
 
 ### `classify_place`
 
@@ -326,7 +329,7 @@ required: true
 | `config/competition_10x6_arm_mission.yaml` | CRAIC2026 10×6 场地真实后端任务链 |
 | `config/competition_mission_template.yaml` | 比赛/真机 mission 模板 |
 | `config/competition_10x6_mission.yaml` | 10×6 比赛仿真地图近似路线；全任务 mock，可配 Nav2 只测导航 |
-| `config/verify_point1_grasp.yaml` | skip-navigation，验证一号点抓取 action |
+| `config/verify_point1_grasp.yaml` | skip-navigation，验证一号点双目标装载 action |
 | `config/verify_point2_meter_voice.yaml` | skip-navigation，验证二号点读表 service + WAV 语音 |
 | `config/verify_point2_meter_host_voice.yaml` | skip-navigation，验证二号点读表 + 图片回传 + WAV 语音 |
 | `config/verify_point3_flame_tracking.yaml` | skip-navigation，验证三号点火焰 tracker service/status + detection topic |

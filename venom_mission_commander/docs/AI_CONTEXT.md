@@ -66,7 +66,7 @@ start_area
 
 Task chain highlights:
 
-- Point 1: `grasp_item` → `/manipulation/execute_task` → `PICK_AND_PLACE_LATEST_TARGET` → `blackboard["grasped_object"]`.
+- Point 1: `grasp_item` → `/manipulation/execute_task` → `REPEAT_VISUAL_PICK_TO_PAYLOAD` → `blackboard["grasped_object"]`，由 piper 侧按配置完成 black/golden 双目标装载。
 - Point 2: `read_meter` → `/perception/read_printed_number` in competition/standalone configs, or `/perception/verification/read_printed_number` in one-shot meter verification launches → `meter_reading`; then `host_report`; then `voice_report`; then `track_flame mode=start`.
 - Point 3: `track_flame mode=stop`; then `detect_flame` waits on `/perception/flame/detections_2d_array`.
 - Point 4: `classify_place` → `/manipulation/execute_task` → `CLASSIFY_PLATFORM_TO_COLOR_BOXES` → `blackboard["last_placement"]`.
@@ -122,7 +122,7 @@ Prefer serializable dicts for new keys unless the immediate next task must consu
 
 | Task | Plugin/helper | External interface |
 | --- | --- | --- |
-| `grasp_item` | `arm_task_client.execute_manipulation_action_task()` | action `/manipulation/execute_task`, goal constant `PICK_AND_PLACE_LATEST_TARGET` |
+| `grasp_item` | `arm_task_client.execute_manipulation_action_task()` | action `/manipulation/execute_task`; plugin default is `PICK_AND_PLACE_LATEST_TARGET`, CRAIC point 1 overrides to `REPEAT_VISUAL_PICK_TO_PAYLOAD` |
 | `classify_place` | `arm_task_client.execute_manipulation_action_task()` | action `/manipulation/execute_task`, goal constant `CLASSIFY_PLATFORM_TO_COLOR_BOXES` |
 | `read_meter` | `read_meter_task.execute_service_read_meter()` | YAML `service_name`; competition/standalone uses `/perception/read_printed_number`, one-shot meter verification launches use `/perception/verification/read_printed_number` (`printed_number_interfaces/srv/ReadPrintedNumber`) |
 | `host_report` | `host_report_task.execute_file_host_report()` | local files under `/tmp/venom_host_reports` |

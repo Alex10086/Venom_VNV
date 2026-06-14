@@ -28,8 +28,10 @@ from venom_mission_commander.task_plugins import (
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 VENOM_VNV_DIR = PACKAGE_DIR.parent
 CRAIC_ARM_MISSION_PATH = PACKAGE_DIR / 'config' / 'competition_10x6_arm_mission.yaml'
+VERIFY_POINT1_GRASP_MISSION_PATH = PACKAGE_DIR / 'config' / 'verify_point1_grasp.yaml'
 VERIFY_POINT3_FLAME_MISSION_PATH = PACKAGE_DIR / 'config' / 'verify_point3_flame_tracking.yaml'
 FLAME_DETECTION_ARRAY_TOPIC = '/perception/flame/detections_2d_array'
+DUAL_TARGET_PAYLOAD_TASK = 'REPEAT_VISUAL_PICK_TO_PAYLOAD'
 
 
 class FakeLogger:
@@ -127,6 +129,16 @@ def task_named(mission, task_name):
 
 def waypoint_named(mission, waypoint_name):
     return next(waypoint for waypoint in mission['waypoints'] if waypoint['name'] == waypoint_name)
+
+
+def assert_dual_target_payload_grasp_task(task):
+    assert task['type'] == 'grasp_item'
+    assert task['backend'] == 'action'
+    assert task['action_name'] == '/manipulation/execute_task'
+    assert task['task_type_name'] == DUAL_TARGET_PAYLOAD_TASK
+    assert task['timeout_sec'] >= 240.0
+    assert task['retry_count'] == 0
+    assert task['output_key'] == 'grasped_object'
 
 
 class FakeFuture:
@@ -263,11 +275,13 @@ def test_resolve_execute_task_value_accepts_constant_names_and_numeric_values():
         Goal=SimpleNamespace(
             PICK_AND_PLACE_LATEST_TARGET=4,
             CLASSIFY_PLATFORM_TO_COLOR_BOXES=5,
+            REPEAT_VISUAL_PICK_TO_PAYLOAD=6,
             START_FLAME_TRACKING=7,
         )
     )
 
     assert resolve_execute_task_value('PICK_AND_PLACE_LATEST_TARGET', fake_execute_task) == 4
+    assert resolve_execute_task_value(DUAL_TARGET_PAYLOAD_TASK, fake_execute_task) == 6
     assert resolve_execute_task_value(7, fake_execute_task) == 7
 
     with pytest.raises(ValueError, match='unknown ExecuteTask goal constant'):
@@ -1400,9 +1414,7 @@ def test_craic_arm_mission_uses_real_arm_backends_and_no_flame_grasp():
     task_point_2 = waypoint_named(mission, 'task_point_2_meter_voice')
     task_point_3 = waypoint_named(mission, 'task_point_3_flame_tracking')
 
-    assert grasp_task['type'] == 'grasp_item'
-    assert grasp_task['backend'] == 'action'
-    assert grasp_task['task_type_name'] == 'PICK_AND_PLACE_LATEST_TARGET'
+    assert_dual_target_payload_grasp_task(grasp_task)
 
     assert detect_flame_task['type'] == 'detect_flame'
     assert detect_flame_task['backend'] == 'topic'
@@ -1436,6 +1448,14 @@ def test_craic_arm_mission_uses_real_arm_backends_and_no_flame_grasp():
     assert classify_task['type'] == 'classify_place'
     assert classify_task['backend'] == 'action'
     assert classify_task['task_type_name'] == 'CLASSIFY_PLATFORM_TO_COLOR_BOXES'
+
+
+def test_verify_point1_grasp_uses_dual_target_payload_action():
+    mission = load_yaml(VERIFY_POINT1_GRASP_MISSION_PATH)
+
+    grasp_task = task_named(mission, 'grasp_item_at_point_1')
+
+    assert_dual_target_payload_grasp_task(grasp_task)
 
 
 def test_verify_point3_flame_tracking_uses_flame_pipeline_topic():

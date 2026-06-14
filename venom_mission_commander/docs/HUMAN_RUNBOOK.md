@@ -19,7 +19,7 @@ CRAIC2026 规则描述两圈逻辑：第一圈探索未知环境、识别减速�
 ```text
 起停区
 → 下方减速带
-→ 一号作业点：识别并抓取目标物体
+→ 一号作业点：按 black_block/golden_block 顺序完成双目标装载
 → 上方减速带
 → 二号作业点：电表读取、图像回传、语音播报
 → 二号到三号移动段：提前开启火焰动态追踪
@@ -36,7 +36,7 @@ CRAIC2026 规则描述两圈逻辑：第一圈探索未知环境、识别减速�
 | --- | --- | --- | --- | --- |
 | 1 | `start_area` | 起停区 | `(1.10, 1.10, 0.0)` | `wait 0.5s`，跳过导航 |
 | 2 | `pass_speed_bump_lower` | 第一处减速带 | `(6.00, 1.50, 0.0)` | 无 |
-| 3 | `task_point_1_pick` | 一号作业点抓取 | `(7.85, 1.50, 0.0)` | `grasp_item` |
+| 3 | `task_point_1_pick` | 一号作业点双目标装载 | `(7.85, 1.50, 0.0)` | `grasp_item` |
 | 4 | `pass_speed_bump_upper` | 第二处减速带 | `(6.00, 4.50, 0.0)` | 无 |
 | 5 | `task_point_2_meter_voice` | 二号作业点读表/回传/播报 | `(7.85, 4.50, 0.0)` | `read_meter` → `host_report` → `voice_report` → `track_flame start` → `wait` |
 | 6 | `task_point_3_flame_tracking` | 三号作业点火焰识别/追踪确认 | `(5.00, 4.15, 1.5708)` | `track_flame stop` → `detect_flame` |
@@ -146,7 +146,7 @@ ros2 launch venom_mission_commander mission_commander.launch.py \
 
 | 要测的链路 | 推荐 YAML | 运行前先启动 |
 | --- | --- | --- |
-| 一号点抓取 | `config/verify_point1_grasp.yaml` | 机械臂 action server、抓取视觉/目标融合 |
+| 一号点双目标装载 | `config/verify_point1_grasp.yaml` | 机械臂 action server、抓取视觉/目标融合 |
 | 二号点读表 + 播报 | `config/verify_point2_meter_voice.yaml` | `/perception/read_printed_number`、WAV/声卡 |
 | 二号点读表 + 图像回传 + 播报 | `config/verify_point2_meter_host_voice.yaml` | `/perception/read_printed_number`，且 response 带 `image_path` |
 | 三号点火焰追踪/识别 | `config/verify_point3_flame_tracking.yaml` | flame detector、`/flame_arm_tracker/set_enabled`、`/flame_arm_tracker/status` |
@@ -165,7 +165,7 @@ source install/setup.bash
 
 #### 一号点：`verify_point1_grasp.yaml`
 
-依赖：D435i、抓取 YOLO、`grasp_target_fusion`、Piper 控制、MoveIt/MTC、`/manipulation/execute_task`。
+依赖：D435i、pick YOLO、`grasp_target_fusion`、Piper 控制、MoveIt/MTC、`/manipulation/execute_task`。
 
 ```bash
 ros2 launch grasp_target_fusion real_pick_vision.launch.py \
@@ -174,12 +174,13 @@ ros2 launch grasp_target_fusion real_pick_vision.launch.py \
   launch_color_box_detector:=false \
   launch_classification_yolo_detector:=false \
   launch_classification_yolo_bridge:=false \
-  target_class:=bottle \
-  yolo_allowed_classes:=bottle \
+  launch_repeat_visual_pick:=false \
+  target_class:=black_block \
+  yolo_allowed_classes:=black_block,golden_block \
   yolo_min_confidence:=0.7
 ```
 
-如果抓取模型不是默认 `yolov8n.pt`，追加：
+如果抓取模型不是默认 `block_best.pt`，追加：
 
 ```bash
 yolo_model_path:=$HOME/venom_ws/models/yolo/<your_pick_model>.pt
@@ -187,8 +188,10 @@ yolo_model_path:=$HOME/venom_ws/models/yolo/<your_pick_model>.pt
 
 注意：
 
-- 现在这条 launch 默认按 `can_piper` 连接机械臂；如果你的机械臂仍然挂在 `can0`，请显式改成 `can_port:=can0`
-- 抓取链已经启用单目标保护；同类目标同时出现在画面里时，`/perception/pick/target_valid` 会变成 `false`
+- 上面的命令显式按 `can_piper` 连接机械臂；如果你的机械臂仍然挂在 `can0`，请改成 `can_port:=can0`
+- commander 的 point-1 YAML 会发送 `REPEAT_VISUAL_PICK_TO_PAYLOAD`；目标类别顺序和载荷盘 slot 顺序由 `piper_mtc_tasks` 配置控制
+- 不要同时启用 standalone `launch_repeat_visual_pick:=true`，避免脚本和 commander action 两个入口同时控制机械臂
+- 抓取链已经启用单目标保护；当前目标类别同时出现多个候选时，`/perception/pick/target_valid` 会变成 `false`
 
 运行 verify：
 

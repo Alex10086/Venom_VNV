@@ -14,10 +14,16 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/ExecuteTask.action"
   "msg/Detection2D.msg"
   "msg/Detection2DArray.msg"
+  "msg/FlameTrackerStatus.msg"
   "msg/GraspTarget.msg"
   DEPENDENCIES
     geometry_msgs
     std_msgs
 )
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_interface_manifest test/test_interface_manifest.py)
+endif()
 
 ament_package()

@@ -1,0 +1,13 @@
+std_msgs/Header header
+bool enabled
+string mode
+bool target_acquired
+float32 target_age_sec
+float32 yaw_error_rad
+float32 pitch_error_rad
+bool joint_state_ok
+bool camera_info_ok
+bool command_output_ok
+bool command_saturated
+string target_class_name
+string message

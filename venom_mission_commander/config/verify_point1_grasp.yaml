@@ -1,4 +1,4 @@
-# Skip-Nav2 module verification for CRAIC2026 point 1 grasp.
+# Skip-Nav2 module verification for CRAIC2026 point 1 dual-target payload loading.
 # Bring up the arm action server and its vision/target pipeline before running.
 # Run with:
 #   ros2 launch venom_mission_commander mission_commander.launch.py \
@@ -12,7 +12,7 @@ mission:
 
 waypoints:
   - name: verify_point1_grasp_station
-    description: 跳过导航，只验证一号作业点抓取 action 链路。
+    description: 跳过导航，只验证一号作业点双目标装载 action 链路。
     frame_id: map
     x: 0.0
     y: 0.0
@@ -28,9 +28,9 @@ waypoints:
         type: grasp_item
         backend: action
         action_name: /manipulation/execute_task
-        task_type_name: PICK_AND_PLACE_LATEST_TARGET
-        timeout_sec: 90.0
+        task_type_name: REPEAT_VISUAL_PICK_TO_PAYLOAD
+        timeout_sec: 300.0
         server_wait_timeout_sec: 3.0
-        retry_count: 1
+        retry_count: 0
         retry_backoff_sec: 0.5
         output_key: grasped_object
