@@ -43,10 +43,13 @@ struct Cylinder
   double height;
 };
 
-void add_box_to_scene(planning_scene::PlanningScene & scene, const Box & box)
+void add_box_to_scene(
+  planning_scene::PlanningScene & scene,
+  const std::string & frame_id,
+  const Box & box)
 {
   moveit_msgs::msg::CollisionObject object;
-  object.header.frame_id = "base_link";
+  object.header.frame_id = frame_id;
   object.id = box.id;
   object.operation = moveit_msgs::msg::CollisionObject::ADD;
 
@@ -65,10 +68,13 @@ void add_box_to_scene(planning_scene::PlanningScene & scene, const Box & box)
   scene.processCollisionObjectMsg(object);
 }
 
-void add_cylinder_to_scene(planning_scene::PlanningScene & scene, const Cylinder & cylinder)
+void add_cylinder_to_scene(
+  planning_scene::PlanningScene & scene,
+  const std::string & frame_id,
+  const Cylinder & cylinder)
 {
   moveit_msgs::msg::CollisionObject object;
-  object.header.frame_id = "base_link";
+  object.header.frame_id = frame_id;
   object.id = cylinder.id;
   object.operation = moveit_msgs::msg::CollisionObject::ADD;
 
@@ -87,10 +93,11 @@ void add_cylinder_to_scene(planning_scene::PlanningScene & scene, const Cylinder
   scene.processCollisionObjectMsg(object);
 }
 
-void add_mobile_pick_table(planning_scene::PlanningScene & scene)
+void add_mobile_pick_table(planning_scene::PlanningScene & scene, const std::string & frame_id)
 {
   add_box_to_scene(
     scene,
+    frame_id,
     Box{
       "pickup_table",
       Eigen::Vector3d(0.35, 0.0, 0.39),
@@ -146,8 +153,9 @@ int main(int argc, char ** argv)
   rclcpp::init(argc, argv);
   auto node = std::make_shared<rclcpp::Node>("ik_frame_sweep");
 
+  node->declare_parameter<std::string>("planning_frame", "piper_base_link");
   node->declare_parameter<std::string>("arm_group_name", "arm");
-  node->declare_parameter<std::string>("hand_frame", "gripper_grasp_center");
+  node->declare_parameter<std::string>("hand_frame", "piper_gripper_grasp_center");
   node->declare_parameter<bool>("check_table_collision", true);
   node->declare_parameter<double>("ik_timeout_sec", 0.05);
   node->declare_parameter<int>("max_results", 20);
@@ -175,6 +183,7 @@ int main(int argc, char ** argv)
     4.188790204786, 4.450589592585, 4.712388980384, 4.974188368183,
     5.235987755982, 5.497787143781, 5.759586531580, 6.021385919379});
 
+  const auto planning_frame = node->get_parameter("planning_frame").as_string();
   const auto arm_group_name = node->get_parameter("arm_group_name").as_string();
   const auto hand_frame = node->get_parameter("hand_frame").as_string();
   const auto check_table_collision = node->get_parameter("check_table_collision").as_bool();
@@ -235,10 +244,11 @@ int main(int argc, char ** argv)
 
   planning_scene::PlanningScene scene(robot_model);
   if (check_table_collision) {
-    add_mobile_pick_table(scene);
+    add_mobile_pick_table(scene, planning_frame);
   }
   add_cylinder_to_scene(
     scene,
+    planning_frame,
     Cylinder{
       "redbull_can",
       Eigen::Vector3d(object_xyz_values[0], object_xyz_values[1], object_xyz_values[2]),

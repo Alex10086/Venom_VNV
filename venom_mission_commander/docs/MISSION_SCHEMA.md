@@ -293,7 +293,7 @@ required: true
 | Parameter | Default | Backend | Meaning |
 | --- | --- | --- | --- |
 | `backend` | `mock` | all | `mock` / `topic` |
-| `detection_topic` | `/perception/detections_2d_array` | topic | flame detector 输出 topic |
+| `detection_topic` | `/perception/flame/detections_2d_array` | topic | flame detector 输出 topic |
 | `target_class` | `fire` | topic | 目标类别，CRAIC2026 为 `fire` |
 | `min_confidence` | `0.45` | topic | 最低置信度 |
 | `min_consecutive_detections` | `1` | topic | 连续命中帧数 |

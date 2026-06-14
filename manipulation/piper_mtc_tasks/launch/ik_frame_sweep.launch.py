@@ -10,11 +10,21 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 def generate_launch_description():
     mtc_share = get_package_share_directory("piper_mtc_tasks")
-    moveit_config = MoveItConfigsBuilder(
-        "piper", package_name="piper_with_gripper_moveit"
-    ).to_moveit_configs()
+    link_prefix = LaunchConfiguration("link_prefix")
+    moveit_config = (
+        MoveItConfigsBuilder("piper", package_name="piper_with_gripper_moveit")
+        .robot_description(
+            file_path="config/piper.urdf.xacro",
+            mappings={"prefix": link_prefix},
+        )
+        .robot_description_semantic(
+            file_path="config/piper.srdf",
+            mappings={"prefix": link_prefix},
+        )
+        .to_moveit_configs()
+    )
 
-    default_params = os.path.join(mtc_share, "config", "ik_frame_sweep.yaml")
+    default_params = os.path.join(mtc_share, "config", "ik_frame_sweep_sim_can.yaml")
 
     return LaunchDescription(
         [
@@ -23,6 +33,7 @@ def generate_launch_description():
                 default_value=default_params,
                 description="Path to IK frame sweep parameter file",
             ),
+            DeclareLaunchArgument("link_prefix", default_value="piper_"),
             Node(
                 package="piper_mtc_tasks",
                 executable="ik_frame_sweep",
