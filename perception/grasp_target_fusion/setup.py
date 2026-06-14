@@ -16,6 +16,7 @@ setup(
         (f"share/{package_name}", ["README.md"]),
         (os.path.join("share", package_name, "launch"), glob("launch/*.py")),
         (os.path.join("share", package_name, "config"), glob("config/*.yaml")),
+        (os.path.join("share", package_name, "models"), glob("models/*.pt")),
         (os.path.join("share", package_name, "handeye"), glob("handeye/*.yaml")),
         (os.path.join("share", package_name, "scripts"), glob("scripts/*.py")),
     ],

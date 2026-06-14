@@ -44,3 +44,5 @@ COLCON_IGNORE
 
 # Local model weights; package deployable model artifacts explicitly if needed
 *.pt
+!perception/grasp_target_fusion/models/block_best.pt
+!perception/grasp_target_fusion/models/box_best.pt
