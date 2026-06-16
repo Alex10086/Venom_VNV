@@ -6,7 +6,7 @@ Panels:
         - /Global Options1
         - /Cloud Registered1
         - /LaserScan1
-        - /Map1
+        - /Static Map1
       Splitter Ratio: 0.5
     Tree Height: 700
   - Class: rviz_common/Views
@@ -31,6 +31,8 @@ Visualization Manager:
     - Class: rviz_default_plugins/TF
       Enabled: true
       Frame Timeout: 15
+      Frames:
+        All Enabled: true
       Marker Scale: 0.4
       Name: TF
       Show Arrows: true
@@ -107,7 +109,7 @@ Visualization Manager:
       Color Scheme: map
       Draw Behind: true
       Enabled: true
-      Name: Map
+      Name: Static Map
       Topic:
         Depth: 1
         Durability Policy: Transient Local
@@ -123,7 +125,7 @@ Visualization Manager:
         Value: /map_updates
       Use Timestamp: false
       Value: true
-    - Alpha: 0.45
+    - Alpha: 0.32
       Class: rviz_default_plugins/Map
       Color Scheme: costmap
       Draw Behind: false
@@ -131,7 +133,7 @@ Visualization Manager:
       Name: Local Costmap
       Topic:
         Depth: 1
-        Durability Policy: Volatile
+        Durability Policy: Transient Local
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
@@ -144,7 +146,7 @@ Visualization Manager:
         Value: /local_costmap/costmap_updates
       Use Timestamp: false
       Value: true
-    - Alpha: 0.45
+    - Alpha: 0.28
       Class: rviz_default_plugins/Map
       Color Scheme: costmap
       Draw Behind: false
@@ -152,7 +154,7 @@ Visualization Manager:
       Name: Global Costmap
       Topic:
         Depth: 1
-        Durability Policy: Volatile
+        Durability Policy: Transient Local
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
@@ -175,7 +177,7 @@ Visualization Manager:
       Length: 0.3
       Line Style: Lines
       Line Width: 0.03
-      Name: Path
+      Name: Robot Path
       Offset:
         X: 0
         Y: 0
@@ -191,12 +193,12 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /path
+        Value: /robot_path
       Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: odom
+    Fixed Frame: map
     Frame Rate: 30
   Name: root
   Tools:
@@ -205,6 +207,16 @@ Visualization Manager:
     - Class: rviz_default_plugins/Select
     - Class: rviz_default_plugins/FocusCamera
     - Class: rviz_default_plugins/Measure
+    - Class: rviz_default_plugins/SetInitialPose
+      Covariance x: 0.25
+      Covariance y: 0.25
+      Covariance yaw: 0.06853891909122467
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /initialpose
     - Class: rviz_default_plugins/SetGoal
       Topic:
         Depth: 5

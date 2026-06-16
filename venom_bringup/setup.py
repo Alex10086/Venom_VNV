@@ -107,6 +107,8 @@ setup(
         'console_scripts': [
             'multi_waypoint_commander = '
             'venom_bringup.multi_waypoint_commander:main',
+            'odom_path_publisher = '
+            'venom_bringup.odom_path_publisher:main',
         ],
     },
 )
