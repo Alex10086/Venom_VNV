@@ -159,31 +159,32 @@ controller_server:
       global_plan_viapoint_sep: -1.0
       global_plan_prune_distance: 1.0
       exact_arc_length: False
-      feasibility_check_no_poses: 2
+      feasibility_check_no_poses: 5
       publish_feedback: False
 
       # Hunter is Ackermann-like; keep initial limits conservative for tuning.
       max_vel_x: 0.55
-      max_vel_x_backwards: 0.25
+      max_vel_x_backwards: 0.22
       max_vel_y: 0.0
       max_vel_theta: 0.25
       acc_lim_x: 1.2
       acc_lim_y: 0.0
       acc_lim_theta: 0.35
-      min_turning_radius: 2.5
+      min_turning_radius: 2.0
       wheelbase: 0.65
       cmd_angle_instead_rotvel: False
 
+      # Temporary conservative envelope: MID360 is rear-mounted and no URDF footprint is available yet.
       footprint_model:
         type: "circular"
-        radius: 0.35
+        radius: 0.40
 
       free_goal_vel: False
       xy_goal_tolerance: 0.25
       yaw_goal_tolerance: 0.35
 
-      min_obstacle_dist: 0.45
-      inflation_dist: 0.65
+      min_obstacle_dist: 0.25
+      inflation_dist: 0.60
       include_costmap_obstacles: True
       costmap_obstacles_behind_robot_dist: 1.0
       obstacle_poses_affected: 15
@@ -203,10 +204,10 @@ controller_server:
       weight_acc_lim_x: 1.0
       weight_acc_lim_theta: 60.0
       weight_kinematics_nh: 1000.0
-      weight_kinematics_forward_drive: 5.0
+      weight_kinematics_forward_drive: 12.0
       weight_kinematics_turning_radius: 80.0
       weight_optimaltime: 3.0
-      weight_shortest_path: 8.0
+      weight_shortest_path: 4.0
       weight_obstacle: 100.0
       weight_inflation: 0.2
       weight_viapoint: 0.0
@@ -240,12 +241,13 @@ local_costmap:
       width: 8
       height: 8
       resolution: 0.05
-      robot_radius: 0.35
+      # Keep the costmap collision envelope aligned with TEB's circular footprint.
+      robot_radius: 0.40
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        inflation_radius: 0.65
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -279,7 +281,7 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       use_sim_time: False
-      robot_radius: 0.35
+      robot_radius: 0.40
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
@@ -303,7 +305,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        inflation_radius: 0.65
       always_send_full_costmap: True
 
 map_server:
@@ -323,14 +325,38 @@ map_saver:
 
 planner_server:
   ros__parameters:
-    expected_planner_frequency: 20.0
+    expected_planner_frequency: 5.0
     use_sim_time: False
     planner_plugins: ["GridBased"]
     GridBased:
-      plugin: "nav2_navfn_planner/NavfnPlanner"
+      plugin: "nav2_smac_planner/SmacPlannerHybrid"
       tolerance: 0.5
-      use_astar: false
       allow_unknown: true
+      max_iterations: 1000000
+      max_on_approach_iterations: 1000
+      max_planning_time: 5.0
+      downsample_costmap: false
+      downsampling_factor: 1
+      motion_model_for_search: "REEDS_SHEPP"
+      minimum_turning_radius: 2.0
+      angle_quantization_bins: 72
+      analytic_expansion_ratio: 3.5
+      analytic_expansion_max_length: 10.0
+      analytic_expansion_max_cost: 200.0
+      analytic_expansion_max_cost_override: false
+      cost_penalty: 2.0
+      reverse_penalty: 2.0
+      change_penalty: 0.0
+      non_straight_penalty: 1.2
+      lookup_table_size: 20.0
+      smooth_path: true
+      smoother:
+        max_iterations: 1000
+        w_smooth: 0.3
+        w_data: 0.2
+        tolerance: 1.0e-10
+        do_refinement: true
+        refinement_num: 2
 
 smoother_server:
   ros__parameters:
