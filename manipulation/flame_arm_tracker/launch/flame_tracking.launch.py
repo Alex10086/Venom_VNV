@@ -2,7 +2,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -23,6 +23,16 @@ def generate_launch_description():
         "use_yolo",
         default_value="true",
         description="Use YOLO detector instead of HSV color detector.",
+    )
+    auto_enable_arg = DeclareLaunchArgument(
+        "auto_enable",
+        default_value="false",
+        description="Automatically enable flame tracking after startup.",
+    )
+    auto_enable_delay_arg = DeclareLaunchArgument(
+        "auto_enable_delay_sec",
+        default_value="3.0",
+        description="Delay before calling /flame_arm_tracker/set_enabled when auto_enable is true.",
     )
 
     color_detector_node = Node(
@@ -51,10 +61,31 @@ def generate_launch_description():
         parameters=[LaunchConfiguration("params_file")],
     )
 
+    auto_enable_call = TimerAction(
+        period=LaunchConfiguration("auto_enable_delay_sec"),
+        actions=[
+            ExecuteProcess(
+                cmd=[
+                    "ros2",
+                    "service",
+                    "call",
+                    "/flame_arm_tracker/set_enabled",
+                    "std_srvs/srv/SetBool",
+                    "{data: true}",
+                ],
+                output="screen",
+                condition=IfCondition(LaunchConfiguration("auto_enable")),
+            )
+        ],
+    )
+
     return LaunchDescription([
         params_arg,
         use_yolo_arg,
+        auto_enable_arg,
+        auto_enable_delay_arg,
         color_detector_node,
         yolo_detector_node,
         tracker_node,
+        auto_enable_call,
     ])

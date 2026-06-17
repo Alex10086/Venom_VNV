@@ -96,7 +96,7 @@ pick_place_server:
       compute_grasp_offsets: true
       lock_lateral_offsets_to_zero: true
       default_target_size_xyz: [0.044, 0.044, 0.044]
-      target_position_bias_xyz: [0.125, 0.0, 0.0]
+      target_position_bias_xyz: [0.125, 0.0, 0.0]  # 目标点偏置，单位为米
       pregrasp_distance: 0.07
       grasp_clearance: 0.01
       grasp_z_offset: 0.0
@@ -150,7 +150,7 @@ pick_place_server:
         - 0.05
         - 0.0
       box_target_timeout_sec: 15.0
-      min_box_confidence: 0.05
+      min_box_confidence: 0.02
       grasp_target_topic: /perception/classify/grasp_target
       target_valid_topic: /perception/classify/target_valid
       target_fusion_node_name: /classify_grasp_target_fusion
