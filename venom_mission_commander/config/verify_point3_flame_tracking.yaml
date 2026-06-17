@@ -49,6 +49,10 @@ waypoints:
         timeout_sec: 60.0
         output_key: flame_detection
 
+      - name: hold_flame_tracking
+        type: wait
+        seconds: 30.0
+
       - name: stop_flame_tracking
         type: track_flame
         backend: service

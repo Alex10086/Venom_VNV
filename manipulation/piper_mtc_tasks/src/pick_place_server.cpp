@@ -2424,6 +2424,24 @@ private:
       }
 
       stop_gripper_hold();
+      publish_feedback(
+        goal_handle,
+        ExecuteTask::Goal::STAGE_MOVING_HOME,
+        "Repeat visual pick completed: moving arm home");
+      if (!execute_named_arm_target(
+          parameters_.arm_home_named_target,
+          "home after repeat visual pick",
+          error_message))
+      {
+        finish_failure(
+          ExecuteTask::Goal::STAGE_MOVING_HOME,
+          ExecuteTask::Result::ERROR_EXECUTION_FAILED,
+          error_message.empty() ?
+          "Failed to move arm home after repeat visual pick." :
+          error_message);
+        return;
+      }
+
       restore_baseline();
       clear_current_task(nullptr);
       finish_result(
@@ -2873,6 +2891,28 @@ private:
           clear_current_task(nullptr);
           return;
         }
+      }
+
+      stop_gripper_hold();
+      publish_feedback(
+        goal_handle,
+        ExecuteTask::Goal::STAGE_MOVING_HOME,
+        "Classification place completed: moving arm home");
+      if (!execute_named_arm_target(
+          parameters_.arm_home_named_target,
+          "home after classification place",
+          error_message))
+      {
+        finish_result(
+          goal_handle,
+          false,
+          ExecuteTask::Goal::STAGE_MOVING_HOME,
+          ExecuteTask::Result::ERROR_EXECUTION_FAILED,
+          error_message.empty() ?
+          "Failed to move arm home after classification place." :
+          error_message);
+        clear_current_task(nullptr);
+        return;
       }
 
       finish_result(

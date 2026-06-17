@@ -10,6 +10,15 @@
 ros2 launch flame_arm_tracker flame_tracking.launch.py use_yolo:=true
 ```
 
+单独联调火焰追踪时，可让 launch 启动后自动调用
+`/flame_arm_tracker/set_enabled`：
+
+```bash
+ros2 launch flame_arm_tracker flame_tracking.launch.py \
+  use_yolo:=true \
+  auto_enable:=true
+```
+
 使用自定义参数文件：
 
 ```bash

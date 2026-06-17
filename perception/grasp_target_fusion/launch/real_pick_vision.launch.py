@@ -149,7 +149,7 @@ def generate_launch_description():
             default_value=classification_model_path,
         ),
         DeclareLaunchArgument("classification_yolo_allowed_classes", default_value="black_box,golden_box"),
-        DeclareLaunchArgument("classification_yolo_min_confidence", default_value="0.5"),
+        DeclareLaunchArgument("classification_yolo_min_confidence", default_value="0.05"),
         DeclareLaunchArgument("classification_yolo_output_topic", default_value="/perception/classify/yolo_detections"),
         DeclareLaunchArgument("classification_yolo_debug_topic", default_value="/perception/classify/debug/yolo_result"),
         IncludeLaunchDescription(
