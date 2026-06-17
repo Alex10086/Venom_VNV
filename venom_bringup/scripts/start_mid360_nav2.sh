@@ -5,6 +5,8 @@ WS="${VENOM_WS:-$HOME/venom_ws}"
 CAN_IFACE="${CAN_IFACE:-can0}"
 CAN_BITRATE="${CAN_BITRATE:-500000}"
 POINT_LIO_RVIZ="${POINT_LIO_RVIZ:-true}"
+LIVOX_CONFIG="${LIVOX_CONFIG:-$WS/src/venom_vnv/venom_bringup/config/hunter_se/MID360_config.json}"
+POINT_LIO_CFG="${POINT_LIO_CFG:-$WS/src/venom_vnv/venom_bringup/config/examples/point_lio_mapping.yaml}"
 SLAM_PARAMS="${SLAM_PARAMS:-$WS/src/venom_vnv/venom_bringup/config/sentry/slam_toolbox_mapping.yaml}"
 NAV2_PARAMS="${NAV2_PARAMS:-$WS/src/venom_vnv/venom_bringup/config/scout_mini/nav2_params.yaml}"
 
@@ -41,6 +43,16 @@ if [ ! -f "$NAV2_PARAMS" ]; then
     exit 1
 fi
 
+if [ ! -f "$LIVOX_CONFIG" ]; then
+    echo "Livox MID360 config not found: $LIVOX_CONFIG" >&2
+    exit 1
+fi
+
+if [ ! -f "$POINT_LIO_CFG" ]; then
+    echo "Point-LIO params not found: $POINT_LIO_CFG" >&2
+    exit 1
+fi
+
 echo "Requesting sudo for CAN setup..."
 sudo -v
 
@@ -70,7 +82,10 @@ set -u
 
 # 1. MID360 + Point-LIO。这个 launch 会按 rviz 参数打开 lio.rviz。
 echo "Starting MID360 + Point-LIO..."
-ros2 launch venom_bringup mid360_point_lio.launch.py "rviz:=$POINT_LIO_RVIZ" &
+ros2 launch venom_bringup mid360_point_lio.launch.py \
+    "rviz:=$POINT_LIO_RVIZ" \
+    "livox_user_config:=$LIVOX_CONFIG" \
+    "point_lio_cfg:=$POINT_LIO_CFG" &
 PIDS+=("$!")
 
 sleep 8

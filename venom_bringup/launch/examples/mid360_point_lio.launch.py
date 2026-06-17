@@ -12,6 +12,7 @@ def generate_launch_description():
     venom_bringup_dir = get_package_share_directory("venom_bringup")
 
     use_rviz = LaunchConfiguration("rviz")
+    rviz_config = LaunchConfiguration("rviz_config")
     livox_user_config = LaunchConfiguration("livox_user_config")
     point_lio_cfg = LaunchConfiguration("point_lio_cfg")
 
@@ -25,6 +26,11 @@ def generate_launch_description():
 
     declare_rviz = DeclareLaunchArgument(
         "rviz", default_value="true", description="Launch RViz if true."
+    )
+    declare_rviz_config = DeclareLaunchArgument(
+        "rviz_config",
+        default_value=default_rviz_cfg,
+        description="Path to the RViz config file.",
     )
     declare_livox_user_config = DeclareLaunchArgument(
         "livox_user_config",
@@ -70,12 +76,13 @@ def generate_launch_description():
         executable="rviz2",
         name="rviz2",
         output="screen",
-        arguments=["-d", default_rviz_cfg],
+        arguments=["-d", rviz_config],
     )
 
     return LaunchDescription(
         [
             declare_rviz,
+            declare_rviz_config,
             declare_livox_user_config,
             declare_point_lio_cfg,
             livox_driver,
