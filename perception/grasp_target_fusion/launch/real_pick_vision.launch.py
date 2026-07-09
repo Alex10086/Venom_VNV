@@ -102,7 +102,7 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_depth", default_value="true"),
         DeclareLaunchArgument("enable_gyro", default_value="false"),
         DeclareLaunchArgument("enable_accel", default_value="false"),
-        DeclareLaunchArgument("can_port", default_value="can0"),
+        DeclareLaunchArgument("can_port", default_value="can1"),
         DeclareLaunchArgument("auto_enable", default_value="true"),
         DeclareLaunchArgument("gripper_exist", default_value="true"),
         DeclareLaunchArgument("gripper_val_mutiple", default_value="2"),
