@@ -5,10 +5,27 @@ WS="${VENOM_WS:-$HOME/venom_ws}"
 CAN_IFACE="${CAN_IFACE:-can0}"
 CAN_BITRATE="${CAN_BITRATE:-500000}"
 POINT_LIO_RVIZ="${POINT_LIO_RVIZ:-true}"
+LIVOX_FRAME_ID="${LIVOX_FRAME_ID:-mid360_link}"
 LIVOX_CONFIG="${LIVOX_CONFIG:-$WS/src/venom_vnv/venom_bringup/config/hunter_se/MID360_config.json}"
-POINT_LIO_CFG="${POINT_LIO_CFG:-$WS/src/venom_vnv/venom_bringup/config/examples/point_lio_mapping.yaml}"
+POINT_LIO_CFG="${POINT_LIO_CFG:-$WS/src/venom_vnv/venom_bringup/config/hunter_se/point_lio_mid360_tilted.yaml}"
 SLAM_PARAMS="${SLAM_PARAMS:-$WS/src/venom_vnv/venom_bringup/config/hunter_se/slam_toolbox_mapping.yaml}"
 MAP_PREFIX="$WS/src/venom_vnv/venom_bringup/map/competition_10x6"
+
+# The MID360 is mounted front/back reversed, then tilted upward.
+# Point-LIO publishes odom -> mid360_link, so this script publishes the inverse
+# mount transform mid360_link -> base_link for Nav2 and pointcloud_to_laserscan.
+# The effective ROS-frame pitch is calibrated from the live Point-LIO body pose.
+MID360_TO_BASE_X="${MID360_TO_BASE_X:-0.0}"
+MID360_TO_BASE_Y="${MID360_TO_BASE_Y:-0.0}"
+MID360_TO_BASE_Z="${MID360_TO_BASE_Z:-0.0}"
+MID360_TO_BASE_ROLL="${MID360_TO_BASE_ROLL:-0.0}"
+MID360_TO_BASE_PITCH="${MID360_TO_BASE_PITCH:-0.5489}"
+MID360_TO_BASE_YAW="${MID360_TO_BASE_YAW:-3.141592653589793}"
+
+SCAN_MIN_HEIGHT="${SCAN_MIN_HEIGHT:-0.05}"
+SCAN_MAX_HEIGHT="${SCAN_MAX_HEIGHT:-0.7}"
+SCAN_RANGE_MIN="${SCAN_RANGE_MIN:-0.3}"
+SCAN_RANGE_MAX="${SCAN_RANGE_MAX:-50.0}"
 
 PIDS=()
 
@@ -66,7 +83,20 @@ echo "Starting MID360 + Point-LIO..."
 ros2 launch venom_bringup mid360_point_lio.launch.py \
     "rviz:=$POINT_LIO_RVIZ" \
     "livox_user_config:=$LIVOX_CONFIG" \
+    "livox_frame_id:=$LIVOX_FRAME_ID" \
     "point_lio_cfg:=$POINT_LIO_CFG" &
+PIDS+=("$!")
+
+echo "Publishing MID360-to-base static TF..."
+ros2 run tf2_ros static_transform_publisher \
+    --x "$MID360_TO_BASE_X" \
+    --y "$MID360_TO_BASE_Y" \
+    --z "$MID360_TO_BASE_Z" \
+    --roll "$MID360_TO_BASE_ROLL" \
+    --pitch "$MID360_TO_BASE_PITCH" \
+    --yaw "$MID360_TO_BASE_YAW" \
+    --frame-id "$LIVOX_FRAME_ID" \
+    --child-frame-id base_link &
 PIDS+=("$!")
 
 sleep 8
@@ -78,14 +108,14 @@ ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node \
     -r scan:=/scan \
     -p target_frame:=base_link \
     -p transform_tolerance:=0.2 \
-    -p min_height:=0.05 \
-    -p max_height:=0.7 \
+    -p "min_height:=$SCAN_MIN_HEIGHT" \
+    -p "max_height:=$SCAN_MAX_HEIGHT" \
     -p angle_min:=-3.14159 \
     -p angle_max:=3.14159 \
     -p angle_increment:=0.001 \
     -p scan_time:=0.1 \
-    -p range_min:=0.3 \
-    -p range_max:=50.0 \
+    -p "range_min:=$SCAN_RANGE_MIN" \
+    -p "range_max:=$SCAN_RANGE_MAX" \
     -p use_inf:=true \
     -p output_reliable:=true &
 PIDS+=("$!")

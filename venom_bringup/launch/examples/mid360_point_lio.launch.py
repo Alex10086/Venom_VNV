@@ -14,6 +14,7 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration("rviz")
     rviz_config = LaunchConfiguration("rviz_config")
     livox_user_config = LaunchConfiguration("livox_user_config")
+    livox_frame_id = LaunchConfiguration("livox_frame_id")
     point_lio_cfg = LaunchConfiguration("point_lio_cfg")
 
     default_livox_user_config = os.path.join(
@@ -37,6 +38,11 @@ def generate_launch_description():
         default_value=default_livox_user_config,
         description="Path to Livox MID360 user config json.",
     )
+    declare_livox_frame_id = DeclareLaunchArgument(
+        "livox_frame_id",
+        default_value="base_link",
+        description="Frame id stamped on Livox MID360 lidar and imu messages.",
+    )
     declare_point_lio_cfg = DeclareLaunchArgument(
         "point_lio_cfg",
         default_value=default_point_lio_cfg,
@@ -54,7 +60,7 @@ def generate_launch_description():
             {"data_src": 0},
             {"publish_freq": 10.0},
             {"output_data_type": 0},
-            {"frame_id": "base_link"},
+            {"frame_id": livox_frame_id},
             {"lvx_file_path": "/home/livox/livox_test.lvx"},
             {"user_config_path": livox_user_config},
             {"cmdline_input_bd_code": "livox0000000001"},
@@ -84,6 +90,7 @@ def generate_launch_description():
             declare_rviz,
             declare_rviz_config,
             declare_livox_user_config,
+            declare_livox_frame_id,
             declare_point_lio_cfg,
             livox_driver,
             point_lio,
