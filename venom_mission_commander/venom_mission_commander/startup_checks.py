@@ -1,4 +1,5 @@
 import math
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -153,10 +154,22 @@ class StartupChecker:
                 },
             )
 
-        available_services = sorted({name for name, _ in self.node.get_service_names_and_types()})
-        available_topics = sorted({name for name, _ in self.node.get_topic_names_and_types()})
-        missing_services = [name for name in required_services if name not in available_services]
-        missing_topics = [name for name in required_topics if name not in available_topics]
+        deadline = time.monotonic() + min(max(self.navigator_ready_timeout_sec, 0.0), 8.0)
+        available_services: list[str] = []
+        available_topics: list[str] = []
+        missing_services = required_services
+        missing_topics = required_topics
+        while True:
+            available_services, available_topics = self._available_graph_endpoints()
+            missing_services = [
+                name for name in required_services if name not in available_services
+            ]
+            missing_topics = [name for name in required_topics if name not in available_topics]
+            if not missing_services and not missing_topics:
+                break
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.1)
 
         success = not missing_services and not missing_topics
         message = (
@@ -181,6 +194,11 @@ class StartupChecker:
                 'missing_topics': missing_topics,
             },
         )
+
+    def _available_graph_endpoints(self) -> tuple[list[str], list[str]]:
+        available_services = sorted({name for name, _ in self.node.get_service_names_and_types()})
+        available_topics = sorted({name for name, _ in self.node.get_topic_names_and_types()})
+        return available_services, available_topics
 
     def check_navigator_ready(self) -> StartupCheckResult:
         try:
@@ -239,5 +257,21 @@ class StartupChecker:
                             )
                         )
                     )
+                elif task.task_type == 'read_meter' and backend == 'service':
+                    required_services.add(
+                        str(task.params.get('service_name', '/perception/read_printed_number'))
+                    )
+                elif task.task_type == 'perception_control':
+                    service_name = task.params.get('service_name')
+                    if service_name:
+                        required_services.add(str(service_name))
+                elif task.task_type in {'grasp_item', 'classify_place'} and backend in {
+                    'action',
+                    'execute_task',
+                    'manipulation',
+                }:
+                    # There is no cheap action graph check here; task execution still waits for
+                    # the action server with its own timeout.
+                    pass
 
         return sorted(required_services), sorted(required_topics)

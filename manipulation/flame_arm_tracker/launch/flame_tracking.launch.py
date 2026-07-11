@@ -6,6 +6,7 @@ from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -34,6 +35,11 @@ def generate_launch_description():
         default_value="3.0",
         description="Delay before calling /flame_arm_tracker/set_enabled when auto_enable is true.",
     )
+    yolo_enabled_arg = DeclareLaunchArgument(
+        "yolo_enabled",
+        default_value="true",
+        description="Load the flame YOLO model at startup.",
+    )
 
     color_detector_node = Node(
         package="flame_arm_tracker",
@@ -49,7 +55,10 @@ def generate_launch_description():
         executable="flame_yolo_detector",
         name="flame_yolo_detector",
         output="screen",
-        parameters=[LaunchConfiguration("params_file")],
+        parameters=[
+            LaunchConfiguration("params_file"),
+            {"enabled": ParameterValue(LaunchConfiguration("yolo_enabled"), value_type=bool)},
+        ],
         condition=IfCondition(LaunchConfiguration("use_yolo")),
     )
 
@@ -84,6 +93,7 @@ def generate_launch_description():
         use_yolo_arg,
         auto_enable_arg,
         auto_enable_delay_arg,
+        yolo_enabled_arg,
         color_detector_node,
         yolo_detector_node,
         tracker_node,

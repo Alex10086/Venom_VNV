@@ -57,3 +57,11 @@ classify_grasp_target_fusion:
     depth_roi_half_width_px: 8
     max_detection_age_sec: 30.0
     depth_scale: 0.001
+    target_center_offset_px: [0.0, 0.0]
+    target_center_offset_scale_xy: [0.0, 0.0]
+    use_bbox_depth_sample: true
+    bbox_depth_sample_percentile: 80.0
+    bbox_depth_sample_region_scale_xy: [0.55, 0.55]
+    bbox_depth_sample_center_offset_scale_xy: [0.0, 0.0]
+    target_ray_depth_offset_m: 0.195
+    camera_target_offset_xyz: [0.0, 0.0, 0.0]

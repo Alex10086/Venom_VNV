@@ -29,6 +29,9 @@ pick_place_server:
     cartesian_jump_threshold: 0.0
     cartesian_velocity_scaling: 0.10
     cartesian_acceleration_scaling: 0.08
+    prefer_direct_arm_trajectory_execution: true
+    arm_trajectory_goal_time_tolerance_sec: 8.0
+    arm_trajectory_result_timeout_padding_sec: 8.0
     grasp_angle_delta: 0.174532925199
     execute_on_plan: true
     diagnostic_ik_only: false
@@ -74,7 +77,7 @@ pick_place_server:
       release_height: 0.10
       orientation_rpy: [0.0, 1.57079632679, -1.57079632679]
       release_after_pre_place: false
-      allow_direct_release_fallback: false
+      allow_direct_release_fallback: true
       direct_release_retreat_z: 0.08
       fixed_pose_index: 0
       fixed_pose_candidates_xyz:
@@ -95,16 +98,73 @@ pick_place_server:
       min_target_confidence: 0.7
       compute_grasp_offsets: true
       lock_lateral_offsets_to_zero: true
+      robust_candidate_enabled: true
       default_target_size_xyz: [0.044, 0.044, 0.044]
-      target_position_bias_xyz: [0.125, 0.0, 0.0]  # 目标点偏置，单位为米
+      target_position_bias_xyz: [0.215, -0.0025, 0.05]  # 目标点偏置，单位为米
       pregrasp_distance: 0.07
-      grasp_clearance: 0.01
-      grasp_z_offset: 0.0
+      grasp_clearance: 0.003
+      grasp_z_offset: 0.05
       collision_scale_xy: 0.85
       collision_scale_z: 0.90
       workspace_min_xyz: [0.10, -0.35, 0.03]
-      workspace_max_xyz: [0.60, 0.35, 0.40]
+      workspace_max_xyz: [0.80, 0.35, 0.40]
       yaw_candidate_offsets: [0.0, -0.1745329252, 0.1745329252, -0.3490658504, 0.3490658504]
+      target_position_candidate_offsets_xyz:
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.010
+        - 0.0
+        - 0.0
+        - 0.018
+        - 0.010
+        - 0.0
+        - 0.0
+        - 0.020
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.015
+        - 0.0
+        - 0.0
+        - -0.015
+        - 0.0
+        - 0.0
+        - 0.0
+        - -0.010
+        - -0.010
+        - 0.0
+        - 0.0
+      orientation_candidate_offsets_rpy:
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0872664626
+        - 0.0
+        - 0.0
+        - -0.0872664626
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0872664626
+        - 0.0
+        - 0.0
+        - -0.0872664626
+        - 0.0
+      grasp_forward_probe_distance_candidates: [0.008, 0.015, 0.022]
+      pregrasp_distance_candidates: [0.09, 0.07, 0.05, 0.03]
+      empty_grasp_retreat_backoff: 0.10
+      empty_grasp_retreat_up: 0.0
+      refresh_target_after_empty_grasp: true
+      refresh_retry_target_position_bias_xyz: [0.030, -0.0025, -0.01]
+      empty_grasp_target_refresh_timeout_sec: 1.5
+      refresh_same_object_max_xy_delta: 0.080
+      refresh_same_object_max_xyz_delta: 0.090
+      refresh_same_object_max_z_delta: 0.055
+      max_empty_grasp_target_refresh_count: 2
+      max_visual_pick_candidates: 5
       grasp_strategy: radial_side
       object_shape: cylinder
       allowed_target_classes: [black_block, golden_block, white_block, black, golden, white, can, redbull, block, cylinder]
@@ -119,36 +179,61 @@ pick_place_server:
       #   slot 1 = golden_block, dropped into golden_box
       platform_slots_xyz:
         - -0.10
-        - -0.30
-        - 0.26
+        - -0.31
+        - 0.30
         - 0.0
-        - -0.30
-        - 0.26
+        - -0.31
+        - 0.30
       platform_slot_classes: [black_block, golden_block]
       box_classes: [black_box, golden_box]
       pregrasp_offset_xyz: [0.0, 0.0, 0.07]
       lift_offset_xyz: [0.0, 0.0, 0.07]
-      release_offset_xyz: [0.12, 0.0, 0.23]
+      release_offset_xyz: [0.06, 0.0, 0.16]
       grasp_orientation_rpy: [0.0, 1.57079632679, -1.57079632679]
-      release_orientation_rpy: [0.0, -1.57079632679, -3.14159265359]
-      release_workspace_min_xyz: [0.0, -0.30, 0.34]
-      release_workspace_max_xyz: [0.10, -0.10, 0.40]
+      release_orientation_rpy: [3.14159265359, -1.1780972451, -0.78539816339]
+      release_workspace_min_xyz: [0.20, -0.20, 0.18]
+      release_workspace_max_xyz: [1.0, 0.20, 0.40]
+      pick_candidate_offsets_xyz:
+        - 0.0
+        - 0.0
+        - 0.0
+      move_home_before_platform_pick: true
+      use_direct_pregrasp_joint_approach: true
+      direct_pregrasp_approach_lift_z: 0.04
+      direct_pregrasp_joint_duration_sec: 4.0
+      direct_pregrasp_joint_goal_time_tolerance_sec: 8.0
+      release_orientation_candidate_offsets_rpy:
+        - 0.0
+        - 0.0
+        - 0.0
+        - -3.14159265359
+        - -0.39269908169
+        - -2.35619449019
+        - 0.0
+        - -0.19634954085
+        - -0.39269908169
+        - 0.0
+        - 0.19634954085
+        - 0.39269908169
       release_candidate_offsets_xyz:
         - 0.0
         - 0.0
         - 0.0
-        - -0.05
+        - -0.06
         - 0.0
+        - 0.06
+        - -0.18
         - 0.0
-        - 0.05
+        - 0.10
+        - 0.03
         - 0.0
-        - 0.0
-        - 0.0
-        - -0.05
-        - 0.0
-        - 0.0
-        - 0.05
-        - 0.0
+        - -0.02
+      adaptive_release_candidates_enabled: true
+      adaptive_release_nominal_xy_radius: 0.46
+      adaptive_release_backoff_step: 0.04
+      adaptive_release_max_backoff: 0.12
+      adaptive_release_lift_step: 0.03
+      adaptive_release_max_lift: 0.09
       box_target_timeout_sec: 15.0
       min_box_confidence: 0.02
       grasp_target_topic: /perception/classify/grasp_target

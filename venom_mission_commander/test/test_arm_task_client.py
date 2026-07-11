@@ -1411,6 +1411,14 @@ def test_craic_arm_mission_uses_real_arm_backends_and_no_flame_grasp():
     observe_wait_task = task_named(mission, 'wait_flame_tracker_observe_pose')
     stop_flame_task = task_named(mission, 'stop_flame_tracking_at_point_3')
     classify_task = task_named(mission, 'classify_and_place_object')
+    enable_pick_yolo_task = task_named(mission, 'enable_pick_yolo_for_point_1')
+    disable_pick_yolo_task = task_named(mission, 'disable_pick_yolo_after_point_1')
+    enable_digit_yolo_task = task_named(mission, 'enable_digit_yolo_for_point_2')
+    disable_digit_yolo_task = task_named(mission, 'disable_digit_yolo_after_point_2')
+    enable_flame_yolo_task = task_named(mission, 'enable_flame_yolo_for_moving_segment')
+    disable_flame_yolo_task = task_named(mission, 'disable_flame_yolo_after_point_3')
+    enable_classify_yolo_task = task_named(mission, 'enable_classification_yolo_for_point_4')
+    disable_classify_yolo_task = task_named(mission, 'disable_classification_yolo_after_point_4')
     task_point_2 = waypoint_named(mission, 'task_point_2_meter_voice')
     task_point_3 = waypoint_named(mission, 'task_point_3_flame_tracking')
 
@@ -1448,6 +1456,53 @@ def test_craic_arm_mission_uses_real_arm_backends_and_no_flame_grasp():
     assert classify_task['type'] == 'classify_place'
     assert classify_task['backend'] == 'action'
     assert classify_task['task_type_name'] == 'CLASSIFY_PLATFORM_TO_COLOR_BOXES'
+
+    assert_perception_control_task(
+        enable_pick_yolo_task,
+        '/pick_yolo_detector/set_enabled',
+        'start',
+    )
+    assert_perception_control_task(
+        disable_pick_yolo_task,
+        '/pick_yolo_detector/set_enabled',
+        'stop',
+    )
+    assert_perception_control_task(
+        enable_digit_yolo_task,
+        '/digit_yolo_detector/set_enabled',
+        'start',
+    )
+    assert_perception_control_task(
+        disable_digit_yolo_task,
+        '/digit_yolo_detector/set_enabled',
+        'stop',
+    )
+    assert_perception_control_task(
+        enable_flame_yolo_task,
+        '/flame_yolo_detector/set_enabled',
+        'start',
+    )
+    assert_perception_control_task(
+        disable_flame_yolo_task,
+        '/flame_yolo_detector/set_enabled',
+        'stop',
+    )
+    assert_perception_control_task(
+        enable_classify_yolo_task,
+        '/classification_yolo_detector/set_enabled',
+        'start',
+    )
+    assert_perception_control_task(
+        disable_classify_yolo_task,
+        '/classification_yolo_detector/set_enabled',
+        'stop',
+    )
+
+
+def assert_perception_control_task(task, service_name, mode):
+    assert task['type'] == 'perception_control'
+    assert task['service_name'] == service_name
+    assert task['mode'] == mode
 
 
 def test_verify_point1_grasp_uses_dual_target_payload_action():

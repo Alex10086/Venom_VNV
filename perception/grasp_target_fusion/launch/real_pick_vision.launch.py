@@ -7,6 +7,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 import yaml
 
 
@@ -104,6 +105,7 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_accel", default_value="false"),
         DeclareLaunchArgument("can_port", default_value="can1"),
         DeclareLaunchArgument("auto_enable", default_value="true"),
+        DeclareLaunchArgument("can_loss_grace_sec", default_value="3.0"),
         DeclareLaunchArgument("gripper_exist", default_value="true"),
         DeclareLaunchArgument("gripper_val_mutiple", default_value="2"),
         DeclareLaunchArgument("invert_gripper_command", default_value="false"),
@@ -116,6 +118,7 @@ def generate_launch_description():
         DeclareLaunchArgument("publish_mount_to_base_tf", default_value="false"),
         DeclareLaunchArgument("link_prefix", default_value="piper_"),
         DeclareLaunchArgument("handeye_file", default_value=handeye_file),
+        DeclareLaunchArgument("camera_frame", default_value="handeye_d435i_color_optical_frame"),
         DeclareLaunchArgument("mtc_params", default_value=mtc_params),
         # Backward-compatible aliases for the pick/load-to-payload detector.
         DeclareLaunchArgument("launch_yolo_detector", default_value="true"),
@@ -127,6 +130,7 @@ def generate_launch_description():
         DeclareLaunchArgument("launch_color_box_detector", default_value="false"),
         DeclareLaunchArgument("launch_flame_tracking", default_value="false"),
         DeclareLaunchArgument("flame_use_yolo", default_value="true"),
+        DeclareLaunchArgument("flame_yolo_enabled", default_value="true"),
         DeclareLaunchArgument("flame_params_file", default_value=flame_tracking_config),
         DeclareLaunchArgument("launch_repeat_visual_pick", default_value="false"),
         DeclareLaunchArgument("target_class", default_value="black_block"),
@@ -144,6 +148,7 @@ def generate_launch_description():
         DeclareLaunchArgument("pick_yolo_min_confidence", default_value=LaunchConfiguration("yolo_min_confidence")),
         DeclareLaunchArgument("pick_yolo_output_topic", default_value="/perception/pick/yolo_detections"),
         DeclareLaunchArgument("pick_yolo_debug_topic", default_value="/perception/pick/debug/yolo_result"),
+        DeclareLaunchArgument("pick_yolo_enabled", default_value="true"),
         DeclareLaunchArgument(
             "classification_yolo_model_path",
             default_value=classification_model_path,
@@ -152,6 +157,7 @@ def generate_launch_description():
         DeclareLaunchArgument("classification_yolo_min_confidence", default_value="0.05"),
         DeclareLaunchArgument("classification_yolo_output_topic", default_value="/perception/classify/yolo_detections"),
         DeclareLaunchArgument("classification_yolo_debug_topic", default_value="/perception/classify/debug/yolo_result"),
+        DeclareLaunchArgument("classification_yolo_enabled", default_value="true"),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(d435i_launch),
             launch_arguments={
@@ -173,6 +179,7 @@ def generate_launch_description():
             launch_arguments={
                 "can_port": LaunchConfiguration("can_port"),
                 "auto_enable": LaunchConfiguration("auto_enable"),
+                "can_loss_grace_sec": LaunchConfiguration("can_loss_grace_sec"),
                 "gripper_exist": LaunchConfiguration("gripper_exist"),
                 "gripper_val_mutiple": LaunchConfiguration("gripper_val_mutiple"),
                 "invert_gripper_command": LaunchConfiguration("invert_gripper_command"),
@@ -203,7 +210,13 @@ def generate_launch_description():
             executable="grasp_target_fusion",
             name="pick_grasp_target_fusion",
             output="screen",
-            parameters=[fusion_config, {"target_class": LaunchConfiguration("target_class")}],
+            parameters=[
+                fusion_config,
+                {
+                    "target_class": LaunchConfiguration("target_class"),
+                    "camera_frame": LaunchConfiguration("camera_frame"),
+                },
+            ],
         ),
         Node(
             package="grasp_target_fusion",
@@ -215,6 +228,7 @@ def generate_launch_description():
                 {
                     "target_class": LaunchConfiguration("classification_target_class"),
                     "min_confidence": LaunchConfiguration("classification_yolo_min_confidence"),
+                    "camera_frame": LaunchConfiguration("camera_frame"),
                 },
             ],
         ),
@@ -231,6 +245,7 @@ def generate_launch_description():
             launch_arguments={
                 "params_file": LaunchConfiguration("flame_params_file"),
                 "use_yolo": LaunchConfiguration("flame_use_yolo"),
+                "yolo_enabled": LaunchConfiguration("flame_yolo_enabled"),
             }.items(),
             condition=IfCondition(LaunchConfiguration("launch_flame_tracking")),
         ),
@@ -246,6 +261,10 @@ def generate_launch_description():
                     "output_topic": LaunchConfiguration("pick_yolo_output_topic"),
                     "annotated_image_topic": LaunchConfiguration("pick_yolo_debug_topic"),
                     "confidence_threshold": LaunchConfiguration("pick_yolo_min_confidence"),
+                    "enabled": ParameterValue(
+                        LaunchConfiguration("pick_yolo_enabled"),
+                        value_type=bool,
+                    ),
                 }
             ],
             condition=IfCondition(LaunchConfiguration("launch_pick_yolo_detector")),
@@ -260,7 +279,7 @@ def generate_launch_description():
                     "input_topic": LaunchConfiguration("pick_yolo_output_topic"),
                     "output_topic": "/perception/pick/detections_2d",
                     "output_array_topic": "/perception/pick/detections_2d_array",
-                    "default_frame_id": "d435i_color_optical_frame",
+                    "default_frame_id": LaunchConfiguration("camera_frame"),
                     "allowed_classes": LaunchConfiguration("pick_yolo_allowed_classes"),
                     "min_confidence": LaunchConfiguration("pick_yolo_min_confidence"),
                 }
@@ -279,6 +298,10 @@ def generate_launch_description():
                     "output_topic": LaunchConfiguration("classification_yolo_output_topic"),
                     "annotated_image_topic": LaunchConfiguration("classification_yolo_debug_topic"),
                     "confidence_threshold": LaunchConfiguration("classification_yolo_min_confidence"),
+                    "enabled": ParameterValue(
+                        LaunchConfiguration("classification_yolo_enabled"),
+                        value_type=bool,
+                    ),
                 }
             ],
             condition=IfCondition(LaunchConfiguration("launch_classification_yolo_detector")),
@@ -293,7 +316,7 @@ def generate_launch_description():
                     "input_topic": LaunchConfiguration("classification_yolo_output_topic"),
                     "output_topic": "/perception/classify/detections_2d",
                     "output_array_topic": "/perception/classify/detections_2d_array",
-                    "default_frame_id": "d435i_color_optical_frame",
+                    "default_frame_id": LaunchConfiguration("camera_frame"),
                     "allowed_classes": LaunchConfiguration("classification_yolo_allowed_classes"),
                     "min_confidence": LaunchConfiguration("classification_yolo_min_confidence"),
                 }

@@ -1,5 +1,6 @@
 # CRAIC 2026 10 m x 6 m route with real manipulation/flame task backends.
-# Bring up Nav2, perception, piper_mtc_tasks, and flame_arm_tracker before running this mission.
+# Bring up Nav2 and the competition runtime launch before running this mission.
+# YOLO detectors are started disabled and are enabled/disabled by perception_control tasks.
 # flame_arm_tracker must use target_class_name:=fire to match the detector and mission checks.
 map:
   name: competition_10x6
@@ -45,6 +46,13 @@ waypoints:
     y: 0.02
     yaw: 1.5708
     tasks:
+      - name: enable_pick_yolo_for_point_1
+        type: perception_control
+        service_name: /pick_yolo_detector/set_enabled
+        mode: start
+        timeout_sec: 8.0
+        service_wait_timeout_sec: 3.0
+        settle_sec: 0.5
       - name: grasp_item_at_point_1
         type: grasp_item
         backend: action
@@ -55,6 +63,13 @@ waypoints:
         retry_count: 0
         retry_backoff_sec: 0.5
         output_key: grasped_object
+      - name: disable_pick_yolo_after_point_1
+        type: perception_control
+        service_name: /pick_yolo_detector/set_enabled
+        mode: stop
+        timeout_sec: 5.0
+        service_wait_timeout_sec: 2.0
+        settle_sec: 0.2
 
   - name: task_point_2_meter_voice
     description: 二号作业点；电表识别、图像回传和语音播报后，提前开启火焰追踪，随后导航中持续对准。
@@ -64,6 +79,13 @@ waypoints:
     y: 3.86
     yaw: -3.1416
     tasks:
+      - name: enable_digit_yolo_for_point_2
+        type: perception_control
+        service_name: /digit_yolo_detector/set_enabled
+        mode: start
+        timeout_sec: 8.0
+        service_wait_timeout_sec: 3.0
+        settle_sec: 0.5
       - name: read_meter_at_point_2
         type: read_meter
         backend: service
@@ -94,6 +116,20 @@ waypoints:
         command: $HOME/venom_ws/scripts/speak_meter_wav.sh
         timeout_sec: 12.0
         required: true
+      - name: disable_digit_yolo_after_point_2
+        type: perception_control
+        service_name: /digit_yolo_detector/set_enabled
+        mode: stop
+        timeout_sec: 5.0
+        service_wait_timeout_sec: 2.0
+        settle_sec: 0.2
+      - name: enable_flame_yolo_for_moving_segment
+        type: perception_control
+        service_name: /flame_yolo_detector/set_enabled
+        mode: start
+        timeout_sec: 8.0
+        service_wait_timeout_sec: 3.0
+        settle_sec: 0.5
       - name: start_flame_tracking_for_moving_segment
         type: track_flame
         backend: service
@@ -137,6 +173,13 @@ waypoints:
         min_consecutive_detections: 1
         timeout_sec: 5.0
         output_key: flame_detection
+      - name: disable_flame_yolo_after_point_3
+        type: perception_control
+        service_name: /flame_yolo_detector/set_enabled
+        mode: stop
+        timeout_sec: 5.0
+        service_wait_timeout_sec: 2.0
+        settle_sec: 0.2
 
   - name: pre_point_4_entry
     kind: operation_stop
@@ -154,6 +197,13 @@ waypoints:
     y: 4.04
     yaw: -1.5708
     tasks:
+      - name: enable_classification_yolo_for_point_4
+        type: perception_control
+        service_name: /classification_yolo_detector/set_enabled
+        mode: start
+        timeout_sec: 8.0
+        service_wait_timeout_sec: 3.0
+        settle_sec: 0.5
       - name: classify_and_place_object
         type: classify_place
         backend: action
@@ -164,6 +214,13 @@ waypoints:
         retry_count: 1
         retry_backoff_sec: 0.5
         output_key: last_placement
+      - name: disable_classification_yolo_after_point_4
+        type: perception_control
+        service_name: /classification_yolo_detector/set_enabled
+        mode: stop
+        timeout_sec: 5.0
+        service_wait_timeout_sec: 2.0
+        settle_sec: 0.2
 
   - name: return_start_area
     description: 返回起停区中心附近停车。

@@ -57,6 +57,25 @@ std::vector<XYZ> read_xyz_triples_parameter(rclcpp::Node & node, const std::stri
   return triples;
 }
 
+std::vector<RPY> read_rpy_triples_parameter(rclcpp::Node & node, const std::string & name)
+{
+  const auto values = node.get_parameter(name).as_double_array();
+  if (values.empty()) {
+    return {};
+  }
+  if (values.size() % 3 != 0) {
+    throw std::runtime_error(
+            "Parameter '" + name + "' must contain rpy triples.");
+  }
+
+  std::vector<RPY> triples;
+  triples.reserve(values.size() / 3);
+  for (std::size_t index = 0; index < values.size(); index += 3) {
+    triples.push_back(RPY{values[index], values[index + 1], values[index + 2]});
+  }
+  return triples;
+}
+
 SceneBox read_scene_box(
   rclcpp::Node & node,
   const std::string & prefix,
@@ -154,6 +173,9 @@ void declare_task_parameters(rclcpp::Node & node)
   node.declare_parameter<double>("cartesian_jump_threshold", 0.0);
   node.declare_parameter<double>("cartesian_velocity_scaling", 0.15);
   node.declare_parameter<double>("cartesian_acceleration_scaling", 0.10);
+  node.declare_parameter<bool>("prefer_direct_arm_trajectory_execution", false);
+  node.declare_parameter<double>("arm_trajectory_goal_time_tolerance_sec", 8.0);
+  node.declare_parameter<double>("arm_trajectory_result_timeout_padding_sec", 8.0);
   node.declare_parameter<double>("grasp_angle_delta", 0.261799387799);
   node.declare_parameter<bool>("execute_on_plan", true);
   node.declare_parameter<bool>("diagnostic_ik_only", false);
@@ -216,6 +238,7 @@ void declare_task_parameters(rclcpp::Node & node)
   node.declare_parameter<bool>("vision_target.require_valid_signal", true);
   node.declare_parameter<bool>("vision_target.compute_grasp_offsets", true);
   node.declare_parameter<bool>("vision_target.lock_lateral_offsets_to_zero", false);
+  node.declare_parameter<bool>("vision_target.robust_candidate_enabled", false);
   node.declare_parameter<double>("vision_target.target_timeout_sec", 0.5);
   node.declare_parameter<double>("vision_target.wait_after_home_timeout_sec", 2.0);
   node.declare_parameter<double>("vision_target.min_target_confidence", 0.7);
@@ -237,6 +260,41 @@ void declare_task_parameters(rclcpp::Node & node)
   node.declare_parameter<std::vector<double>>(
     "vision_target.yaw_candidate_offsets",
     std::vector<double>{-0.2617993878, -0.0872664626, 0.0, 0.0872664626, 0.2617993878});
+  node.declare_parameter<std::vector<double>>(
+    "vision_target.target_position_candidate_offsets_xyz",
+    std::vector<double>{
+      0.0, 0.0, 0.0,
+      0.0, 0.015, 0.0,
+      0.0, -0.015, 0.0,
+      0.01, 0.0, 0.0,
+      -0.01, 0.0, 0.0,
+      0.0, 0.0, 0.01,
+      0.0, 0.0, -0.01});
+  node.declare_parameter<std::vector<double>>(
+    "vision_target.orientation_candidate_offsets_rpy",
+    std::vector<double>{
+      0.0, 0.0, 0.0,
+      0.0872664626, 0.0, 0.0,
+      -0.0872664626, 0.0, 0.0,
+      0.0, 0.0872664626, 0.0,
+      0.0, -0.0872664626, 0.0});
+  node.declare_parameter<std::vector<double>>(
+    "vision_target.grasp_forward_probe_distance_candidates",
+    std::vector<double>{0.0, 0.008, 0.015, 0.022});
+  node.declare_parameter<std::vector<double>>(
+    "vision_target.pregrasp_distance_candidates",
+    std::vector<double>{0.07, 0.05, 0.03, 0.0});
+  node.declare_parameter<double>("vision_target.empty_grasp_retreat_backoff", 0.03);
+  node.declare_parameter<double>("vision_target.empty_grasp_retreat_up", 0.03);
+  node.declare_parameter<bool>("vision_target.refresh_target_after_empty_grasp", true);
+  node.declare_parameter<std::vector<double>>(
+    "vision_target.refresh_retry_target_position_bias_xyz", {0.015, 0.0, 0.010});
+  node.declare_parameter<double>("vision_target.empty_grasp_target_refresh_timeout_sec", 1.5);
+  node.declare_parameter<double>("vision_target.refresh_same_object_max_xy_delta", 0.060);
+  node.declare_parameter<double>("vision_target.refresh_same_object_max_xyz_delta", 0.070);
+  node.declare_parameter<double>("vision_target.refresh_same_object_max_z_delta", 0.045);
+  node.declare_parameter<int64_t>("vision_target.max_empty_grasp_target_refresh_count", 2);
+  node.declare_parameter<int64_t>("vision_target.max_visual_pick_candidates", 5);
   node.declare_parameter<std::vector<std::string>>(
     "vision_target.allowed_target_classes",
     std::vector<std::string>{"block", "cube"});
@@ -284,7 +342,33 @@ void declare_task_parameters(rclcpp::Node & node)
   node.declare_parameter<std::vector<double>>(
     "classification_place.release_workspace_max_xyz", {10.0, 10.0, 10.0});
   node.declare_parameter<std::vector<double>>(
+    "classification_place.pick_candidate_offsets_xyz", {0.0, 0.0, 0.0});
+  node.declare_parameter<bool>(
+    "classification_place.move_home_before_platform_pick", false);
+  node.declare_parameter<bool>(
+    "classification_place.use_direct_pregrasp_joint_approach", true);
+  node.declare_parameter<double>(
+    "classification_place.direct_pregrasp_approach_lift_z", 0.04);
+  node.declare_parameter<double>(
+    "classification_place.direct_pregrasp_joint_duration_sec", 3.0);
+  node.declare_parameter<double>(
+    "classification_place.direct_pregrasp_joint_goal_time_tolerance_sec", 8.0);
+  node.declare_parameter<std::vector<double>>(
+    "classification_place.release_orientation_candidate_offsets_rpy", {0.0, 0.0, 0.0});
+  node.declare_parameter<std::vector<double>>(
     "classification_place.release_candidate_offsets_xyz", {0.0, 0.0, 0.0});
+  node.declare_parameter<bool>(
+    "classification_place.adaptive_release_candidates_enabled", true);
+  node.declare_parameter<double>(
+    "classification_place.adaptive_release_nominal_xy_radius", 0.46);
+  node.declare_parameter<double>(
+    "classification_place.adaptive_release_backoff_step", 0.04);
+  node.declare_parameter<double>(
+    "classification_place.adaptive_release_max_backoff", 0.12);
+  node.declare_parameter<double>(
+    "classification_place.adaptive_release_lift_step", 0.03);
+  node.declare_parameter<double>(
+    "classification_place.adaptive_release_max_lift", 0.09);
   node.declare_parameter<double>("classification_place.box_target_timeout_sec", 3.0);
   node.declare_parameter<double>("classification_place.min_box_confidence", 0.5);
   node.declare_parameter<std::string>(
@@ -402,6 +486,12 @@ TaskParameters load_task_parameters(rclcpp::Node & node)
     node.get_parameter("cartesian_velocity_scaling").as_double();
   parameters.cartesian_acceleration_scaling =
     node.get_parameter("cartesian_acceleration_scaling").as_double();
+  parameters.prefer_direct_arm_trajectory_execution =
+    node.get_parameter("prefer_direct_arm_trajectory_execution").as_bool();
+  parameters.arm_trajectory_goal_time_tolerance_sec =
+    node.get_parameter("arm_trajectory_goal_time_tolerance_sec").as_double();
+  parameters.arm_trajectory_result_timeout_padding_sec =
+    node.get_parameter("arm_trajectory_result_timeout_padding_sec").as_double();
   parameters.grasp_angle_delta = node.get_parameter("grasp_angle_delta").as_double();
   parameters.execute_on_plan = node.get_parameter("execute_on_plan").as_bool();
   parameters.diagnostic_ik_only = node.get_parameter("diagnostic_ik_only").as_bool();
@@ -502,6 +592,8 @@ TaskParameters load_task_parameters(rclcpp::Node & node)
     node.get_parameter("vision_target.compute_grasp_offsets").as_bool();
   parameters.vision_target.lock_lateral_offsets_to_zero =
     node.get_parameter("vision_target.lock_lateral_offsets_to_zero").as_bool();
+  parameters.vision_target.robust_candidate_enabled =
+    node.get_parameter("vision_target.robust_candidate_enabled").as_bool();
   parameters.vision_target.target_timeout_sec =
     node.get_parameter("vision_target.target_timeout_sec").as_double();
   parameters.vision_target.wait_after_home_timeout_sec =
@@ -532,6 +624,34 @@ TaskParameters load_task_parameters(rclcpp::Node & node)
     read_xyz_parameter(node, "vision_target.workspace_max_xyz");
   parameters.vision_target.yaw_candidate_offsets =
     node.get_parameter("vision_target.yaw_candidate_offsets").as_double_array();
+  parameters.vision_target.target_position_candidate_offsets =
+    node.get_parameter("vision_target.target_position_candidate_offsets_xyz").as_double_array();
+  parameters.vision_target.orientation_candidate_offsets =
+    node.get_parameter("vision_target.orientation_candidate_offsets_rpy").as_double_array();
+  parameters.vision_target.grasp_forward_probe_distance_candidates =
+    node.get_parameter("vision_target.grasp_forward_probe_distance_candidates").as_double_array();
+  parameters.vision_target.pregrasp_distance_candidates =
+    node.get_parameter("vision_target.pregrasp_distance_candidates").as_double_array();
+  parameters.vision_target.empty_grasp_retreat_backoff =
+    node.get_parameter("vision_target.empty_grasp_retreat_backoff").as_double();
+  parameters.vision_target.empty_grasp_retreat_up =
+    node.get_parameter("vision_target.empty_grasp_retreat_up").as_double();
+  parameters.vision_target.refresh_target_after_empty_grasp =
+    node.get_parameter("vision_target.refresh_target_after_empty_grasp").as_bool();
+  parameters.vision_target.refresh_retry_target_position_bias =
+    read_xyz_parameter(node, "vision_target.refresh_retry_target_position_bias_xyz");
+  parameters.vision_target.empty_grasp_target_refresh_timeout_sec =
+    node.get_parameter("vision_target.empty_grasp_target_refresh_timeout_sec").as_double();
+  parameters.vision_target.refresh_same_object_max_xy_delta =
+    node.get_parameter("vision_target.refresh_same_object_max_xy_delta").as_double();
+  parameters.vision_target.refresh_same_object_max_xyz_delta =
+    node.get_parameter("vision_target.refresh_same_object_max_xyz_delta").as_double();
+  parameters.vision_target.refresh_same_object_max_z_delta =
+    node.get_parameter("vision_target.refresh_same_object_max_z_delta").as_double();
+  parameters.vision_target.max_empty_grasp_target_refresh_count =
+    node.get_parameter("vision_target.max_empty_grasp_target_refresh_count").as_int();
+  parameters.vision_target.max_visual_pick_candidates =
+    node.get_parameter("vision_target.max_visual_pick_candidates").as_int();
   parameters.vision_target.allowed_target_classes =
     node.get_parameter("vision_target.allowed_target_classes").as_string_array();
   parameters.vision_target.grasp_target_topic =
@@ -605,11 +725,45 @@ TaskParameters load_task_parameters(rclcpp::Node & node)
     read_xyz_parameter(node, "classification_place.release_workspace_min_xyz");
   parameters.classification_place.release_workspace_max =
     read_xyz_parameter(node, "classification_place.release_workspace_max_xyz");
+  parameters.classification_place.pick_candidate_offsets =
+    read_xyz_triples_parameter(node, "classification_place.pick_candidate_offsets_xyz");
+  if (parameters.classification_place.pick_candidate_offsets.empty()) {
+    parameters.classification_place.pick_candidate_offsets.push_back(XYZ{0.0, 0.0, 0.0});
+  }
+  parameters.classification_place.move_home_before_platform_pick =
+    node.get_parameter("classification_place.move_home_before_platform_pick").as_bool();
+  parameters.classification_place.use_direct_pregrasp_joint_approach =
+    node.get_parameter("classification_place.use_direct_pregrasp_joint_approach").as_bool();
+  parameters.classification_place.direct_pregrasp_approach_lift_z =
+    node.get_parameter("classification_place.direct_pregrasp_approach_lift_z").as_double();
+  parameters.classification_place.direct_pregrasp_joint_duration_sec =
+    node.get_parameter("classification_place.direct_pregrasp_joint_duration_sec").as_double();
+  parameters.classification_place.direct_pregrasp_joint_goal_time_tolerance_sec =
+    node.get_parameter(
+    "classification_place.direct_pregrasp_joint_goal_time_tolerance_sec").as_double();
+  parameters.classification_place.release_orientation_candidate_offsets =
+    read_rpy_triples_parameter(node, "classification_place.release_orientation_candidate_offsets_rpy");
+  if (parameters.classification_place.release_orientation_candidate_offsets.empty()) {
+    parameters.classification_place.release_orientation_candidate_offsets.push_back(
+      RPY{0.0, 0.0, 0.0});
+  }
   parameters.classification_place.release_candidate_offsets =
     read_xyz_triples_parameter(node, "classification_place.release_candidate_offsets_xyz");
   if (parameters.classification_place.release_candidate_offsets.empty()) {
     parameters.classification_place.release_candidate_offsets.push_back(XYZ{0.0, 0.0, 0.0});
   }
+  parameters.classification_place.adaptive_release_candidates_enabled =
+    node.get_parameter("classification_place.adaptive_release_candidates_enabled").as_bool();
+  parameters.classification_place.adaptive_release_nominal_xy_radius =
+    node.get_parameter("classification_place.adaptive_release_nominal_xy_radius").as_double();
+  parameters.classification_place.adaptive_release_backoff_step =
+    node.get_parameter("classification_place.adaptive_release_backoff_step").as_double();
+  parameters.classification_place.adaptive_release_max_backoff =
+    node.get_parameter("classification_place.adaptive_release_max_backoff").as_double();
+  parameters.classification_place.adaptive_release_lift_step =
+    node.get_parameter("classification_place.adaptive_release_lift_step").as_double();
+  parameters.classification_place.adaptive_release_max_lift =
+    node.get_parameter("classification_place.adaptive_release_max_lift").as_double();
   parameters.classification_place.box_target_timeout_sec =
     node.get_parameter("classification_place.box_target_timeout_sec").as_double();
   parameters.classification_place.min_box_confidence =
