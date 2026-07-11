@@ -64,7 +64,7 @@ CRAIC2026 规则描述两圈逻辑：第一圈探索未知环境、识别减速�
 7. 启动 mission_commander，指定 competition_10x6_arm_mission.yaml
 ```
 
-### 4.1 Hunter SE + MID360 + Nav2/TEB
+### 4.1 Hunter SE + 斜装 MID360 + Nav2/Smac/TEB
 
 比赛链路按“两阶段”使用：先建静态图，再用静态图定位和导航。不要在
 `mission_commander` 固定 waypoint 任务运行时继续在线建图，否则 `map`
@@ -83,21 +83,51 @@ ros2 run nav2_map_server map_saver_cli -f \
   "$HOME/venom_ws/src/venom_vnv/venom_bringup/map/competition_10x6"
 ```
 
-第二阶段：比赛导航。默认地图 YAML 是第一阶段保存并经过现场标定的
-`venom_bringup/map/competition_10x6.yaml`；这个入口启动 MID360、
-Point-LIO、Hunter 底盘、AMCL/map_server、Nav2/TEB，但不启动
-`mission_commander`。临时测试其他地图时仍可用 `MAP=/path/to/map.yaml`
-覆盖默认值。
+第二阶段：静态图重定位和比赛导航。默认地图 YAML 是第一阶段保存并经过
+现场标定的 `venom_bringup/map/competition_10x6.yaml`；新入口启动斜装
+MID360、Point-LIO、Hunter 底盘、AMCL/map_server、Smac Hybrid-A* 和
+TEB，但不启动 `mission_commander`。Smac 沿用旧 `scout_mini` 已调好的
+`planner_server` 参数：`REEDS_SHEPP`、`minimum_turning_radius: 2.0`、
+`expected_planner_frequency: 5.0` 和 10m analytic expansion。这里的
+“重定位”由 AMCL 在二维静态图上完成，不使用当前已停用的 GICP 重定位入口。
+
+首次使用先构建并加载工作区：
 
 ```bash
 cd "$HOME/venom_ws"
+colcon build --packages-select venom_bringup
+source install/setup.bash
 
-./src/venom_vnv/venom_bringup/scripts/start_hunter_mid360_nav2_teb.sh
+./src/venom_vnv/venom_bringup/scripts/start_hunter_mid360_nav2_smac_teb.sh
 ```
 
+该脚本默认打开与 `rm_nav` bringup 一样的 Nav2 RViz，可看到地图、全局路径、
+局部路径、全局代价地图、局部代价地图、`/scan`、Point-LIO 的
+`/cloud_registered` 点云和 AMCL 粒子。若现场只想
+后台运行导航栈，可设置 `NAV_RVIZ=false` 关闭 RViz。
+
+临时测试其他地图时可使用 `MAP=/path/to/map.yaml` 覆盖默认值，也可以把地图
+YAML 作为第一个位置参数传入。若需要回退到原 NavFn 全局规划器，仍可使用
+`start_hunter_mid360_nav2_teb.sh`。
+
+脚本默认会在 `/amcl` active 后通过 `/set_initial_pose`
+（`nav2_msgs/srv/SetInitialPose`）自动设置 `(0, 0, 0)` 初始位姿，用户不需要在
+RViz 手动点击 `2D Pose Estimate`。若实车起点不是地图
+原点，用环境变量覆盖初始位姿：
+
+```bash
+INITIAL_POSE_X=1.10 INITIAL_POSE_Y=1.10 INITIAL_POSE_YAW=0.0 \
+  ./src/venom_vnv/venom_bringup/scripts/start_hunter_mid360_nav2_smac_teb.sh
+```
+
+只有在设置 `AUTO_INITIAL_POSE=false` 时，才需要在 RViz 手动使用
+`2D Pose Estimate` 给出初始位姿。等待 AMCL 粒子收敛后，先用 RViz 发送
+近距离目标验证 Smac/TEB，再启动总控。
+
 TF 归属必须保持单一：AMCL 发布 `map -> odom`，Point-LIO 发布
-`odom -> base_link`，Hunter 轮速里程计只保留在
-`hunter_odom -> hunter_base_link` / `hunter_odom` 话题用于监控，不参与主 TF。
+`odom -> mid360_link`，斜装静态 TF 发布 `mid360_link -> base_link`。Hunter
+轮速里程计只保留在 `hunter_odom -> hunter_base_link` / `hunter_odom` 话题
+用于监控，不参与主 TF。
 RViz 小目标能稳定到达后，再启动第 6 节的 `mission_commander`。
 
 ## 5. 关键接口检查
@@ -343,15 +373,16 @@ ros2 launch venom_mission_commander mission_commander.launch.py \
 
 #### 全任务 mock，只测 Nav2 导航
 
-先启动实车/仿真 Nav2，让 RViz 手动目标可用：
+先在终端 A 启动该脚本并保持运行，确认 RViz 手动目标可用后，再在终端 B 启动
+commander：
 
 ```bash
-ros2 launch rm_nav_bringup bringup_real.launch.py \
-  mode:=nav \
-  localization:=amcl \
-  lio:=fastlio \
-  world:=competition_10x6 \
-  nav_rviz:=true
+cd "$HOME/venom_ws"
+source install/setup.bash
+POINT_LIO_CFG="$HOME/venom_ws/src/venom_vnv/venom_bringup/config/hunter_se/point_lio_mid360_balanced.yaml" \
+AUTO_INITIAL_POSE=true \
+INITIAL_POSE_X=0.0 INITIAL_POSE_Y=0.0 INITIAL_POSE_YAW=3.14 \
+./src/venom_vnv/venom_bringup/scripts/start_hunter_mid360_nav2_smac_teb.sh
 ```
 
 再启动 commander。这个配置里的抓取、读表、语音、火焰、分类全部走 mock，只保留 waypoint 导航：

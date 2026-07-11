@@ -7,7 +7,7 @@ CAN_BITRATE="${CAN_BITRATE:-500000}"
 POINT_LIO_RVIZ="${POINT_LIO_RVIZ:-true}"
 LIVOX_FRAME_ID="${LIVOX_FRAME_ID:-mid360_link}"
 LIVOX_CONFIG="${LIVOX_CONFIG:-$WS/src/venom_vnv/venom_bringup/config/hunter_se/MID360_config.json}"
-POINT_LIO_CFG="${POINT_LIO_CFG:-$WS/src/venom_vnv/venom_bringup/config/hunter_se/point_lio_mid360_tilted.yaml}"
+POINT_LIO_CFG="${POINT_LIO_CFG:-$WS/src/venom_vnv/venom_bringup/config/hunter_se/point_lio_mid360_light.yaml}"
 SLAM_PARAMS="${SLAM_PARAMS:-$WS/src/venom_vnv/venom_bringup/config/hunter_se/slam_toolbox_mapping.yaml}"
 MAP_PREFIX="$WS/src/venom_vnv/venom_bringup/map/competition_10x6"
 
@@ -29,16 +29,40 @@ SCAN_RANGE_MAX="${SCAN_RANGE_MAX:-50.0}"
 
 PIDS=()
 
+start_process() {
+    setsid "$@" &
+    PIDS+=("$!")
+}
+
 cleanup() {
+    trap - INT TERM EXIT
+    local had_live_group=false
     echo
     echo "Stopping Hunter MID360 mapping stack..."
     for pid in "${PIDS[@]}"; do
-        if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null || true
+        if kill -0 -- "-$pid" 2>/dev/null; then
+            kill -- "-$pid" 2>/dev/null || true
+            had_live_group=true
+        fi
+    done
+    if [ "$had_live_group" = true ]; then
+        sleep 2
+    fi
+    for pid in "${PIDS[@]}"; do
+        if kill -0 -- "-$pid" 2>/dev/null; then
+            kill -KILL -- "-$pid" 2>/dev/null || true
         fi
     done
     wait 2>/dev/null || true
 }
+
+handle_signal() {
+    cleanup
+    exit 130
+}
+
+trap handle_signal INT TERM
+trap cleanup EXIT
 
 require_file() {
     local file_path="$1"
@@ -80,15 +104,14 @@ source "$WS/install/setup.bash"
 set -u
 
 echo "Starting MID360 + Point-LIO..."
-ros2 launch venom_bringup mid360_point_lio.launch.py \
+start_process ros2 launch venom_bringup mid360_point_lio.launch.py \
     "rviz:=$POINT_LIO_RVIZ" \
     "livox_user_config:=$LIVOX_CONFIG" \
     "livox_frame_id:=$LIVOX_FRAME_ID" \
-    "point_lio_cfg:=$POINT_LIO_CFG" &
-PIDS+=("$!")
+    "point_lio_cfg:=$POINT_LIO_CFG"
 
 echo "Publishing MID360-to-base static TF..."
-ros2 run tf2_ros static_transform_publisher \
+start_process ros2 run tf2_ros static_transform_publisher \
     --x "$MID360_TO_BASE_X" \
     --y "$MID360_TO_BASE_Y" \
     --z "$MID360_TO_BASE_Z" \
@@ -96,13 +119,12 @@ ros2 run tf2_ros static_transform_publisher \
     --pitch "$MID360_TO_BASE_PITCH" \
     --yaw "$MID360_TO_BASE_YAW" \
     --frame-id "$LIVOX_FRAME_ID" \
-    --child-frame-id base_link &
-PIDS+=("$!")
+    --child-frame-id base_link
 
 sleep 8
 
 echo "Starting pointcloud_to_laserscan..."
-ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node \
+start_process ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node \
     --ros-args \
     -r cloud_in:=/cloud_registered \
     -r scan:=/scan \
@@ -117,14 +139,12 @@ ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node \
     -p "range_min:=$SCAN_RANGE_MIN" \
     -p "range_max:=$SCAN_RANGE_MAX" \
     -p use_inf:=true \
-    -p output_reliable:=true &
-PIDS+=("$!")
+    -p output_reliable:=true
 
 sleep 2
 
 echo "Starting slam_toolbox mapping with $SLAM_PARAMS..."
-ros2 launch slam_toolbox online_async_launch.py "slam_params_file:=$SLAM_PARAMS" &
-PIDS+=("$!")
+start_process ros2 launch slam_toolbox online_async_launch.py "slam_params_file:=$SLAM_PARAMS"
 
 echo
 echo "Hunter MID360 mapping stack is running."
@@ -140,4 +160,12 @@ echo
 echo "Set POINT_LIO_RVIZ=false to run without RViz."
 echo "Press Ctrl+C to stop all started processes."
 
-wait
+set +e
+wait -n
+child_status=$?
+set -e
+if [ "$child_status" -eq 0 ]; then
+    child_status=1
+fi
+echo "A required process exited; stopping the mapping stack." >&2
+exit "$child_status"

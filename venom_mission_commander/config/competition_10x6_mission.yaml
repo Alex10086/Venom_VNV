@@ -22,7 +22,7 @@ waypoints:
     frame_id: map
     x: 0.0
     y: 0.0
-    yaw: 0.0
+    yaw: 3.14
     skip_navigation: true
     tasks:
       - name: start_delay
@@ -33,18 +33,18 @@ waypoints:
     description: 下方减速带中心通过点，坐标来自新几何描述。
     kind: pass_through
     frame_id: map
-    x: 2.28
-    y: 0.0
-    yaw: 0.0
+    x: -2.315
+    y: 0
+    yaw: 3.14
     nav_timeout_sec: 200.0
 
   - name: task_point_1_pick
     description: 任务点一在右下角区域；停车点位于目标台座左侧，面向目标。
     kind: operation_stop
     frame_id: map
-    x: 4.08
-    y: 0.07
-    yaw: 1.5708
+    x: -4.303
+    y: 0.272
+    yaw: -1.57
     tasks:
       - name: detect_item_at_point_1
         type: detect_item
@@ -61,9 +61,9 @@ waypoints:
     description: 任务点二在右上角区域；停车点位于电表板左侧，面向目标。
     kind: operation_stop
     frame_id: map
-    x: 4.51
-    y: 3.86
-    yaw: -3.1416
+    x: -4.949
+    y: -4.265
+    yaw: 0
     tasks:
       - name: read_meter_at_point_2
         type: read_meter
@@ -79,9 +79,9 @@ waypoints:
     description: 任务点三在上方中间；停车点在宽任务区下缘，面向火灾目标板。
     kind: operation_stop
     frame_id: map
-    x: 2.12
-    y: 4.04
-    yaw: -3.1416
+    x: -1.967
+    y: -4.421
+    yaw: 0
     tasks:
       - name: detect_flame_at_point_3
         type: detect_flame
@@ -96,18 +96,18 @@ waypoints:
   - name: pre_point_4_entry
     kind: operation_stop
     frame_id: map
-    x: 0.405
-    y: 2.00
-    yaw: -1.5708
+    x: -0.369
+    y: -2.00
+    yaw: 1.57
     nav_timeout_sec: 120.0
 
   - name: task_point_4_classify_place
     description: 任务点四在左上角区域；停车点位于台座右侧，面向目标，并保留离左墙的安全余量。
     kind: operation_stop
     frame_id: map
-    x: 0.405
-    y: 4.04
-    yaw: -1.5708
+    x: -0.369
+    y: -4.543
+    yaw: 1.57
     tasks:
       - name: classify_and_place_object
         type: classify_place
@@ -121,8 +121,8 @@ waypoints:
     kind: return_park
     frame_id: map
     x: 0.0
-    y: 0.0
-    yaw: 0.0
+    y: -0.5
+    yaw: 1.57
     nav_timeout_sec: 450.0
     tasks:
       - name: finish_delay
