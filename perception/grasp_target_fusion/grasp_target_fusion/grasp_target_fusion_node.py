@@ -1,5 +1,5 @@
 import math
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import rclpy
@@ -35,6 +35,18 @@ class GraspTargetFusionNode(Node):
         self.declare_parameter("depth_roi_half_width_px", 2)
         self.declare_parameter("max_detection_age_sec", 0.5)
         self.declare_parameter("depth_scale", 0.001)
+        self.declare_parameter("target_center_offset_px", [0.0, 0.0])
+        self.declare_parameter("target_center_offset_scale_xy", [0.0, 0.0])
+        self.declare_parameter("use_bbox_depth_sample", False)
+        self.declare_parameter("bbox_depth_sample_percentile", 50.0)
+        self.declare_parameter("bbox_depth_sample_region_scale_xy", [1.0, 1.0])
+        self.declare_parameter("bbox_depth_sample_center_offset_scale_xy", [0.0, 0.0])
+        self.declare_parameter("target_ray_depth_offset_m", 0.0)
+        self.declare_parameter("camera_target_offset_xyz", [0.0, 0.0, 0.0])
+        self.declare_parameter("front_center_base_x_bias_m", 0.0)
+        self.declare_parameter("front_center_max_abs_y_m", 0.0)
+        self.declare_parameter("front_center_min_x_m", 0.0)
+        self.declare_parameter("front_center_max_x_m", 10.0)
 
         self.planning_frame = self.get_parameter("planning_frame").value
         self.camera_frame = self.get_parameter("camera_frame").value
@@ -50,6 +62,41 @@ class GraspTargetFusionNode(Node):
         self.depth_roi_half_width_px = int(self.get_parameter("depth_roi_half_width_px").value)
         self.max_detection_age_sec = float(self.get_parameter("max_detection_age_sec").value)
         self.depth_scale = float(self.get_parameter("depth_scale").value)
+        self.target_center_offset_px = self.read_float_pair_parameter("target_center_offset_px")
+        self.target_center_offset_scale_xy = self.read_float_pair_parameter(
+            "target_center_offset_scale_xy"
+        )
+        self.use_bbox_depth_sample = bool(
+            self.get_parameter("use_bbox_depth_sample").value
+        )
+        self.bbox_depth_sample_percentile = max(
+            0.0,
+            min(100.0, float(self.get_parameter("bbox_depth_sample_percentile").value)),
+        )
+        self.bbox_depth_sample_region_scale_xy = self.read_float_pair_parameter(
+            "bbox_depth_sample_region_scale_xy"
+        )
+        self.bbox_depth_sample_center_offset_scale_xy = self.read_float_pair_parameter(
+            "bbox_depth_sample_center_offset_scale_xy"
+        )
+        self.target_ray_depth_offset_m = float(
+            self.get_parameter("target_ray_depth_offset_m").value
+        )
+        self.camera_target_offset_xyz = self.read_float_triplet_parameter(
+            "camera_target_offset_xyz"
+        )
+        self.front_center_base_x_bias_m = float(
+            self.get_parameter("front_center_base_x_bias_m").value
+        )
+        self.front_center_max_abs_y_m = max(
+            0.0, float(self.get_parameter("front_center_max_abs_y_m").value)
+        )
+        self.front_center_min_x_m = float(
+            self.get_parameter("front_center_min_x_m").value
+        )
+        self.front_center_max_x_m = float(
+            self.get_parameter("front_center_max_x_m").value
+        )
 
         self.camera_info: Optional[CameraInfo] = None
         self.depth_image: Optional[np.ndarray] = None
@@ -57,6 +104,9 @@ class GraspTargetFusionNode(Node):
         self.latest_detection: Optional[Detection2D] = None
         self.latest_detection_stamp = None
         self.latest_detection_count = 0
+        self._warned_camera_info_frame_mismatch = False
+        self._warned_depth_frame_mismatch = False
+        self._warned_detection_frame_mismatch = False
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -137,9 +187,19 @@ class GraspTargetFusionNode(Node):
         self.target_class_label = ",".join(sorted(self.target_classes)) or "*"
 
     def camera_info_callback(self, message: CameraInfo) -> None:
+        self.warn_if_frame_mismatch_once(
+            message.header.frame_id,
+            "camera_info",
+            "_warned_camera_info_frame_mismatch",
+        )
         self.camera_info = message
 
     def depth_callback(self, message: Image) -> None:
+        self.warn_if_frame_mismatch_once(
+            message.header.frame_id,
+            "aligned_depth",
+            "_warned_depth_frame_mismatch",
+        )
         if message.encoding not in ("16UC1", "32FC1"):
             self.get_logger().warn(
                 f"Unsupported depth encoding '{message.encoding}', expected 16UC1 or 32FC1"
@@ -147,14 +207,25 @@ class GraspTargetFusionNode(Node):
             return
 
         if message.encoding == "16UC1":
-          depth = np.frombuffer(message.data, dtype=np.uint16).reshape(message.height, message.width)
+            depth = np.frombuffer(message.data, dtype=np.uint16).reshape(
+                message.height,
+                message.width,
+            )
         else:
-          depth = np.frombuffer(message.data, dtype=np.float32).reshape(message.height, message.width)
+            depth = np.frombuffer(message.data, dtype=np.float32).reshape(
+                message.height,
+                message.width,
+            )
 
         self.depth_image = depth.copy()
         self.depth_encoding = message.encoding
 
     def detection_callback(self, message: Detection2D) -> None:
+        self.warn_if_frame_mismatch_once(
+            message.header.frame_id,
+            "detection",
+            "_warned_detection_frame_mismatch",
+        )
         if not self.detection_matches_target_class(message):
             self.get_logger().info(
                 "Grasp target debug: ignoring single detection class %s not in %s"
@@ -196,34 +267,68 @@ class GraspTargetFusionNode(Node):
         if target_time is None:
             target_time = self.get_clock().now()
 
-        depth_m = self.lookup_depth_meters(
-            self.latest_detection.center_x,
-            self.latest_detection.center_y,
+        projection_center_x, projection_center_y = self.compute_projection_center(
+            self.latest_detection
         )
+        depth_m, depth_debug = self.lookup_depth_meters(self.latest_detection)
         if depth_m is None or not math.isfinite(depth_m) or depth_m <= 0.0:
             self.get_logger().info(
-                "Grasp target debug: invalid depth at px=(%.1f, %.1f), depth=%s"
+                "Grasp target debug: invalid depth at raw_px=(%.1f, %.1f) proj_px=(%.1f, %.1f), depth=%s %s"
                 % (
                     self.latest_detection.center_x,
                     self.latest_detection.center_y,
+                    projection_center_x,
+                    projection_center_y,
                     "None" if depth_m is None else f"{depth_m:.4f}",
+                    depth_debug,
+                )
+            )
+            self.publish_target_valid(False)
+            return
+
+        projected_depth_m = depth_m + self.target_ray_depth_offset_m
+        if not math.isfinite(projected_depth_m) or projected_depth_m <= 0.0:
+            self.get_logger().warn(
+                "Grasp target debug: target_ray_depth_offset_m=%.4f produced invalid projected depth %.4f"
+                % (
+                    self.target_ray_depth_offset_m,
+                    projected_depth_m,
                 )
             )
             self.publish_target_valid(False)
             return
 
         point_in_camera = self.project_to_camera(
-            self.latest_detection.center_x,
-            self.latest_detection.center_y,
-            depth_m,
+            projection_center_x,
+            projection_center_y,
+            projected_depth_m,
         )
         if point_in_camera is None:
             self.get_logger().info(
-                "Grasp target debug: project_to_camera failed at px=(%.1f, %.1f) depth=%.4f"
+                "Grasp target debug: project_to_camera failed at raw_px=(%.1f, %.1f) proj_px=(%.1f, %.1f) depth=%.4f projected_depth=%.4f"
                 % (
                     self.latest_detection.center_x,
                     self.latest_detection.center_y,
+                    projection_center_x,
+                    projection_center_y,
                     depth_m,
+                    projected_depth_m,
+                )
+            )
+            self.publish_target_valid(False)
+            return
+
+        point_in_camera.point.x += self.camera_target_offset_xyz[0]
+        point_in_camera.point.y += self.camera_target_offset_xyz[1]
+        point_in_camera.point.z += self.camera_target_offset_xyz[2]
+        if not math.isfinite(point_in_camera.point.z) or point_in_camera.point.z <= 0.0:
+            self.get_logger().warn(
+                "Grasp target debug: camera_target_offset_xyz=(%.4f, %.4f, %.4f) produced invalid camera z=%.4f"
+                % (
+                    self.camera_target_offset_xyz[0],
+                    self.camera_target_offset_xyz[1],
+                    self.camera_target_offset_xyz[2],
+                    point_in_camera.point.z,
                 )
             )
             self.publish_target_valid(False)
@@ -245,19 +350,49 @@ class GraspTargetFusionNode(Node):
             return
 
         point_in_base = do_transform_point(point_in_camera, transform)
+        base_point_before_region_bias = (
+            float(point_in_base.point.x),
+            float(point_in_base.point.y),
+            float(point_in_base.point.z),
+        )
+        applied_front_center_bias = False
+        if (
+            abs(point_in_base.point.y) <= self.front_center_max_abs_y_m
+            and self.front_center_min_x_m <= point_in_base.point.x <= self.front_center_max_x_m
+            and abs(self.front_center_base_x_bias_m) > 1e-9
+        ):
+            point_in_base.point.x += self.front_center_base_x_bias_m
+            applied_front_center_bias = True
 
         debug_text = (
-            "Grasp target debug: cls=%s conf=%.3f px=(%.1f, %.1f) depth=%.4f "
-            "cam=(%.4f, %.4f, %.4f) base=(%.4f, %.4f, %.4f)"
+            "Grasp target debug: cls=%s conf=%.3f raw_px=(%.1f, %.1f) proj_px=(%.1f, %.1f) "
+            "size_px=(%.1f, %.1f) depth=%.4f projected_depth=%.4f %s ray_depth_offset=%.4f "
+            "cam_offset=(%.4f, %.4f, %.4f) front_center_x_bias=%.4f applied=%s "
+            "cam=(%.4f, %.4f, %.4f) base_pre_bias=(%.4f, %.4f, %.4f) base=(%.4f, %.4f, %.4f)"
             % (
                 self.latest_detection.class_name,
                 self.latest_detection.confidence,
                 self.latest_detection.center_x,
                 self.latest_detection.center_y,
+                projection_center_x,
+                projection_center_y,
+                self.latest_detection.size_x,
+                self.latest_detection.size_y,
                 depth_m,
+                projected_depth_m,
+                depth_debug,
+                self.target_ray_depth_offset_m,
+                self.camera_target_offset_xyz[0],
+                self.camera_target_offset_xyz[1],
+                self.camera_target_offset_xyz[2],
+                self.front_center_base_x_bias_m,
+                str(applied_front_center_bias).lower(),
                 point_in_camera.point.x,
                 point_in_camera.point.y,
                 point_in_camera.point.z,
+                base_point_before_region_bias[0],
+                base_point_before_region_bias[1],
+                base_point_before_region_bias[2],
                 point_in_base.point.x,
                 point_in_base.point.y,
                 point_in_base.point.z,
@@ -349,10 +484,33 @@ class GraspTargetFusionNode(Node):
     def refresh_target_status(self) -> None:
         self.has_valid_detection()
 
-    def lookup_depth_meters(self, center_x: float, center_y: float) -> Optional[float]:
-        if self.depth_image is None:
-            return None
+    def compute_projection_center(self, detection: Detection2D) -> Tuple[float, float]:
+        return (
+            float(
+                detection.center_x
+                + self.target_center_offset_px[0]
+                + detection.size_x * self.target_center_offset_scale_xy[0]
+            ),
+            float(
+                detection.center_y
+                + self.target_center_offset_px[1]
+                + detection.size_y * self.target_center_offset_scale_xy[1]
+            ),
+        )
 
+    def lookup_depth_meters(self, detection: Detection2D) -> Tuple[Optional[float], str]:
+        if self.depth_image is None:
+            return None, "depth_mode=none"
+
+        if self.use_bbox_depth_sample:
+            return self.lookup_depth_from_bbox(detection)
+        return self.lookup_depth_from_center(detection.center_x, detection.center_y)
+
+    def lookup_depth_from_center(
+        self,
+        center_x: float,
+        center_y: float,
+    ) -> Tuple[Optional[float], str]:
         x = int(round(center_x))
         y = int(round(center_y))
         if (
@@ -361,7 +519,7 @@ class GraspTargetFusionNode(Node):
             or x >= self.depth_image.shape[1]
             or y >= self.depth_image.shape[0]
         ):
-            return None
+            return None, "depth_mode=center_roi out_of_bounds"
 
         roi = self.depth_image[
             max(0, y - self.depth_roi_half_width_px): min(self.depth_image.shape[0], y + self.depth_roi_half_width_px + 1),
@@ -369,9 +527,95 @@ class GraspTargetFusionNode(Node):
         ]
         valid = roi[np.isfinite(roi) & (roi > 0)]
         if valid.size == 0:
-            return None
+            return None, (
+                "depth_mode=center_roi center_px=(%.1f, %.1f) window=%dx%d empty"
+                % (
+                    center_x,
+                    center_y,
+                    roi.shape[1],
+                    roi.shape[0],
+                )
+            )
 
         depth = float(np.median(valid))
+        return self.convert_depth_value(depth), (
+            "depth_mode=center_roi center_px=(%.1f, %.1f) window=%dx%d samples=%d"
+            % (
+                center_x,
+                center_y,
+                roi.shape[1],
+                roi.shape[0],
+                valid.size,
+            )
+        )
+
+    def lookup_depth_from_bbox(self, detection: Detection2D) -> Tuple[Optional[float], str]:
+        if self.depth_image is None:
+            return None, "depth_mode=bbox_roi no_depth_image"
+
+        sample_center_x = (
+            detection.center_x
+            + detection.size_x * self.bbox_depth_sample_center_offset_scale_xy[0]
+        )
+        sample_center_y = (
+            detection.center_y
+            + detection.size_y * self.bbox_depth_sample_center_offset_scale_xy[1]
+        )
+        roi_width = max(
+            1,
+            int(round(abs(detection.size_x) * self.bbox_depth_sample_region_scale_xy[0])),
+        )
+        roi_height = max(
+            1,
+            int(round(abs(detection.size_y) * self.bbox_depth_sample_region_scale_xy[1])),
+        )
+
+        x1 = int(round(sample_center_x - roi_width * 0.5))
+        y1 = int(round(sample_center_y - roi_height * 0.5))
+        x2 = int(round(sample_center_x + roi_width * 0.5))
+        y2 = int(round(sample_center_y + roi_height * 0.5))
+
+        x1 = max(0, min(self.depth_image.shape[1] - 1, x1))
+        y1 = max(0, min(self.depth_image.shape[0] - 1, y1))
+        x2 = max(x1 + 1, min(self.depth_image.shape[1], x2))
+        y2 = max(y1 + 1, min(self.depth_image.shape[0], y2))
+
+        roi = self.depth_image[y1:y2, x1:x2]
+        valid = roi[np.isfinite(roi) & (roi > 0)]
+        if valid.size == 0:
+            center_depth, center_debug = self.lookup_depth_from_center(
+                detection.center_x,
+                detection.center_y,
+            )
+            return center_depth, (
+                "depth_mode=bbox_roi center_px=(%.1f, %.1f) roi=(%d:%d,%d:%d) empty fallback={%s}"
+                % (
+                    sample_center_x,
+                    sample_center_y,
+                    x1,
+                    x2,
+                    y1,
+                    y2,
+                    center_debug,
+                )
+            )
+
+        depth = float(np.percentile(valid, self.bbox_depth_sample_percentile))
+        return self.convert_depth_value(depth), (
+            "depth_mode=bbox_roi center_px=(%.1f, %.1f) roi=(%d:%d,%d:%d) p=%.1f samples=%d"
+            % (
+                sample_center_x,
+                sample_center_y,
+                x1,
+                x2,
+                y1,
+                y2,
+                self.bbox_depth_sample_percentile,
+                valid.size,
+            )
+        )
+
+    def convert_depth_value(self, depth: float) -> float:
         if self.depth_encoding == "16UC1":
             return depth * self.depth_scale
         return depth
@@ -402,9 +646,38 @@ class GraspTargetFusionNode(Node):
         point.point.z = float(depth_m)
         return point
 
+    def warn_if_frame_mismatch_once(
+        self,
+        message_frame: str,
+        source_name: str,
+        warned_attr_name: str,
+    ) -> None:
+        if not message_frame or getattr(self, warned_attr_name):
+            return
+        if message_frame == self.camera_frame:
+            return
+        self.get_logger().warn(
+            "Configured camera_frame is '%s', but %s is arriving in frame '%s'. "
+            "This pipeline will continue to use the configured camera_frame."
+            % (self.camera_frame, source_name, message_frame)
+        )
+        setattr(self, warned_attr_name, True)
+
     @staticmethod
     def to_msg_time(time_value: rclpy.time.Time) -> TimeMsg:
         return time_value.to_msg()
+
+    def read_float_pair_parameter(self, name: str) -> Tuple[float, float]:
+        values = self.get_parameter(name).value
+        if len(values) != 2:
+            raise ValueError(f"Parameter '{name}' must contain exactly 2 values")
+        return float(values[0]), float(values[1])
+
+    def read_float_triplet_parameter(self, name: str) -> Tuple[float, float, float]:
+        values = self.get_parameter(name).value
+        if len(values) != 3:
+            raise ValueError(f"Parameter '{name}' must contain exactly 3 values")
+        return float(values[0]), float(values[1]), float(values[2])
 
     def publish_target_valid(self, value: bool) -> None:
         message = Bool()

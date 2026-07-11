@@ -18,6 +18,7 @@ from venom_mission_commander.startup_checks import StartupChecker
 from venom_mission_commander.task_plugins import TaskPluginRegistry
 from venom_mission_commander.task_runner import WaypointTaskRunner
 from venom_mission_commander.arm_task_client import stop_active_flame_tracking_if_needed
+from venom_mission_commander.perception_control_task import call_set_enabled
 
 
 class MissionCommander(Node):
@@ -64,6 +65,16 @@ class MissionCommander(Node):
             'use_sim_time',
             False,
             ParameterDescriptor(description='Use Gazebo /clock for simulation runs.'),
+        )
+        self._declare_parameter_if_needed(
+            'perception_cleanup_services',
+            [
+                '/pick_yolo_detector/set_enabled',
+                '/digit_yolo_detector/set_enabled',
+                '/flame_yolo_detector/set_enabled',
+                '/classification_yolo_detector/set_enabled',
+            ],
+            ParameterDescriptor(description='SetBool services to disable at mission exit/failure.'),
         )
 
         self.loader = MissionLoader()
@@ -150,6 +161,7 @@ class MissionCommander(Node):
 
             if not success:
                 self.stop_active_flame_tracking('mission failure', force=uses_flame_tracking)
+                self.cleanup_perception('mission failure')
                 self.status_reporter.log_snapshot('mission_failed', self.mission_manager)
                 return False
 
@@ -163,6 +175,7 @@ class MissionCommander(Node):
                     )
                     self.status_reporter.log_snapshot('mission_failed', self.mission_manager)
                     return False
+                self.cleanup_perception('mission completed')
                 self.mission_manager.mark_mission_completed()
                 self.status_reporter.log_snapshot('mission_completed', self.mission_manager)
                 return self.mission_manager.state == MissionState.COMPLETED
@@ -172,6 +185,33 @@ class MissionCommander(Node):
         self.mission_manager.fail('rclpy shutdown requested')
         self.status_reporter.log_snapshot('mission_failed', self.mission_manager)
         return False
+
+    def cleanup_perception(self, reason: str) -> bool:
+        services = [
+            str(service).strip()
+            for service in self.get_parameter('perception_cleanup_services').value
+            if str(service).strip()
+        ]
+        ok = True
+        for service_name in services:
+            response, error = call_set_enabled(
+                self,
+                service_name=service_name,
+                enabled=False,
+                timeout_sec=2.0,
+                service_wait_timeout_sec=0.2,
+            )
+            if error is not None:
+                self.get_logger().debug(
+                    f'Perception cleanup skipped {service_name} during {reason}: {error}'
+                )
+                continue
+            if not response.success:
+                ok = False
+                self.get_logger().warn(
+                    f'Perception cleanup failed for {service_name}: {response.message}'
+                )
+        return ok
 
     def run_startup_checks(self) -> bool:
         if self.mission_config is None or self.navigator is None:
@@ -341,6 +381,7 @@ class MissionCommander(Node):
             'mission commander shutdown',
             force=self.mission_uses_service_flame_tracking(),
         )
+        self.cleanup_perception('mission commander shutdown')
         if self.navigator is not None:
             self.navigator.shutdown()
         self.destroy_node()

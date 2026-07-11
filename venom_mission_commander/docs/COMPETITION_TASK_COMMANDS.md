@@ -148,6 +148,8 @@ ros2 launch venom_mission_commander mission_commander.launch.py \
 ```bash
 ros2 launch grasp_target_fusion real_pick_vision.launch.py \
   can_port:=can1 \
+  launch_yolo_detector:=false \
+  launch_yolo_bridge:=false \
   launch_color_box_detector:=true \
   launch_flame_tracking:=false \
   launch_classification_yolo_detector:=true \
@@ -168,13 +170,14 @@ ros2 launch venom_mission_commander mission_commander.launch.py \
 
 ## 全任务比赛入口
 
-Nav2、读表服务、机械臂 action server、火焰检测/追踪和语音设备都启动后，
-可运行整套比赛 mission：
+Nav2 和语音设备 ready 后，使用整场 runtime 入口。它会一次性拉起相机、
+Piper/MTC、读表 reader、火焰追踪和各 YOLO 节点；YOLO 节点默认不加载模型，
+由 mission 在各任务前后自动启停：
 
 ```bash
-ros2 launch venom_mission_commander mission_commander.launch.py \
+ros2 launch venom_mission_commander competition_10x6_arm_runtime.launch.py \
+  can_port:=can1 \
   use_nav:=true \
   use_sim_time:=false \
-  nav2_wait_mode:=bt_navigator \
-  mission_config:=$HOME/venom_ws/src/venom_vnv/venom_mission_commander/config/competition_10x6_arm_mission.yaml
+  classification_yolo_model_path:=$HOME/venom_ws/models/yolo/<your_classify_model>.pt
 ```

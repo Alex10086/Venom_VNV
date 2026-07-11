@@ -91,6 +91,7 @@ pick_place_server:
       target_valid_topic: /perception/pick/target_valid
       require_single_target: true
       require_valid_signal: false
+      robust_candidate_enabled: true
       target_timeout_sec: 120.0
       wait_after_home_timeout_sec: 45.0
       min_target_confidence: 0.7
@@ -98,16 +99,72 @@ pick_place_server:
       lock_lateral_offsets_to_zero: true
       pregrasp_distance: 0.07
       grasp_clearance: 0.01
-      grasp_z_offset: 0.0
+      grasp_z_offset: 0.045
       grasp_strategy: radial_side
       object_shape: cylinder
       collision_scale_xy: 0.85
       collision_scale_z: 0.90
       default_target_size_xyz: [0.044, 0.044, 0.10]
-      target_position_bias_xyz: [0.0, 0.0, 0.0]
+      target_position_bias_xyz: [0.0, 0.0, 0.020]
       workspace_min_xyz: [0.10, -0.35, 0.03]
-      workspace_max_xyz: [0.60, 0.35, 0.40]
+      workspace_max_xyz: [0.80, 0.35, 0.40]
       yaw_candidate_offsets: [-0.3490658504, -0.1745329252, -0.0872664626, 0.0, 0.0872664626, 0.1745329252, 0.3490658504]
+      target_position_candidate_offsets_xyz:
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.010
+        - 0.0
+        - 0.0
+        - 0.018
+        - 0.010
+        - 0.0
+        - 0.0
+        - 0.020
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.015
+        - 0.0
+        - 0.0
+        - -0.015
+        - 0.0
+        - 0.0
+        - 0.0
+        - -0.010
+        - -0.010
+        - 0.0
+        - 0.0
+      orientation_candidate_offsets_rpy:
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0872664626
+        - 0.0
+        - 0.0
+        - -0.0872664626
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0872664626
+        - 0.0
+        - 0.0
+        - -0.0872664626
+        - 0.0
+      grasp_forward_probe_distance_candidates: [0.008, 0.015, 0.022]
+      pregrasp_distance_candidates: [0.09, 0.07, 0.05, 0.03]
+      empty_grasp_retreat_backoff: 0.050
+      empty_grasp_retreat_up: 0.015
+      refresh_target_after_empty_grasp: true
+      refresh_retry_target_position_bias_xyz: [0.015, 0.0, 0.010]
+      empty_grasp_target_refresh_timeout_sec: 1.5
+      refresh_same_object_max_xy_delta: 0.080
+      refresh_same_object_max_xyz_delta: 0.090
+      refresh_same_object_max_z_delta: 0.055
+      max_empty_grasp_target_refresh_count: 2
+      max_visual_pick_candidates: 5
       allowed_target_classes: [black_block, white_block, black, white, can, redbull, block, cylinder, bottle]
     observe_pose:
       enabled: true
@@ -128,6 +185,10 @@ pick_place_server:
       lift_offset_xyz: [0.0, 0.0, 0.07]
       release_offset_xyz: [0.0, 0.0, 0.10]
       grasp_orientation_rpy: [0.0, 1.57079632679, 1.57079632679]
+      use_direct_pregrasp_joint_approach: true
+      direct_pregrasp_approach_lift_z: 0.04
+      direct_pregrasp_joint_duration_sec: 4.0
+      direct_pregrasp_joint_goal_time_tolerance_sec: 8.0
       box_target_timeout_sec: 3.0
       min_box_confidence: 0.5
       grasp_target_topic: /perception/classify/grasp_target

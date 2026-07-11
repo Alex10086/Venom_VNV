@@ -20,6 +20,7 @@ LAUNCH_PATH = PACKAGE_DIR / 'launch' / 'meter_digit_voice_verification.launch.py
 INTEGRATED_LAUNCH_PATH = (
     PACKAGE_DIR / 'launch' / 'meter_digit_voice_host_report_verification.launch.py'
 )
+COMPETITION_RUNTIME_LAUNCH_PATH = PACKAGE_DIR / 'launch' / 'competition_10x6_arm_runtime.launch.py'
 D435I_COLOR_IMAGE_TOPIC = '/camera/camera/color/image_raw'
 METER_VERIFICATION_LAUNCHES = (
     LAUNCH_PATH,
@@ -119,6 +120,22 @@ def test_integrated_launch_imports_and_generates_description():
         INTEGRATED_LAUNCH_PATH,
         'meter_digit_voice_host_report_launch',
     )
+
+
+def test_competition_runtime_launch_imports_and_generates_description():
+    load_launch_description(
+        COMPETITION_RUNTIME_LAUNCH_PATH,
+        'competition_10x6_arm_runtime_launch',
+    )
+
+
+def test_competition_runtime_launch_starts_yolo_nodes_disabled():
+    source = launch_source(COMPETITION_RUNTIME_LAUNCH_PATH)
+
+    assert "'pick_yolo_enabled': 'false'" in source
+    assert "'classification_yolo_enabled': 'false'" in source
+    assert "'flame_yolo_enabled': 'false'" in source
+    assert "'enabled': False" in source
 
 
 def test_meter_verification_launches_use_realsense_camera_driver():

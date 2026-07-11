@@ -12,7 +12,7 @@ class YoloDetectionBridge(Node):
         self.declare_parameter("input_topic", "/perception/detections")
         self.declare_parameter("output_topic", "/perception/detections_2d")
         self.declare_parameter("output_array_topic", "/perception/detections_2d_array")
-        self.declare_parameter("default_frame_id", "d435i_color_optical_frame")
+        self.declare_parameter("default_frame_id", "handeye_d435i_color_optical_frame")
         self.declare_parameter("allowed_classes", "")
         self.declare_parameter("min_confidence", 0.0)
 

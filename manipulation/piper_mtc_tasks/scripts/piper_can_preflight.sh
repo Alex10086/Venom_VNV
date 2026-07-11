@@ -5,6 +5,7 @@ CAN_PORT="${1:-${CAN_PORT:-can0}}"
 BITRATE="${BITRATE:-1000000}"
 RESTART_MS="${CAN_RESTART_MS:-100}"
 CHECK_SECONDS="${CHECK_SECONDS:-4.0}"
+RESTART_MS_REQUIRED=1
 
 check_feedback() {
   local script_dir
@@ -17,7 +18,13 @@ check_feedback() {
 can_configured() {
   local details
   details="$(ip -details link show "$CAN_PORT" 2>/dev/null || true)"
-  [[ "$details" == *"bitrate ${BITRATE}"* && "$details" == *"restart-ms ${RESTART_MS}"* ]]
+  if [[ "$details" != *"bitrate ${BITRATE}"* ]]; then
+    return 1
+  fi
+  if [[ "$RESTART_MS_REQUIRED" -eq 0 ]]; then
+    return 0
+  fi
+  [[ "$details" == *"restart-ms ${RESTART_MS}"* ]]
 }
 
 configure_can() {
@@ -30,7 +37,11 @@ configure_can() {
 
   sudo -n ip link set "$CAN_PORT" down || true
   sleep 0.5
-  sudo -n ip link set "$CAN_PORT" type can bitrate "$BITRATE" restart-ms "$RESTART_MS"
+  if ! sudo -n ip link set "$CAN_PORT" type can bitrate "$BITRATE" restart-ms "$RESTART_MS"; then
+    echo "${CAN_PORT} does not accept restart-ms ${RESTART_MS}; retrying with bitrate only." >&2
+    RESTART_MS_REQUIRED=0
+    sudo -n ip link set "$CAN_PORT" type can bitrate "$BITRATE"
+  fi
   sudo -n ip link set "$CAN_PORT" up
   sleep 1.0
 }
@@ -44,7 +55,11 @@ if ! can_configured; then
 fi
 
 if ! can_configured; then
-  echo "${CAN_PORT} is still missing bitrate ${BITRATE} or restart-ms ${RESTART_MS} after configuration." >&2
+  if [[ "$RESTART_MS_REQUIRED" -eq 0 ]]; then
+    echo "${CAN_PORT} is still missing bitrate ${BITRATE} after configuration." >&2
+  else
+    echo "${CAN_PORT} is still missing bitrate ${BITRATE} or restart-ms ${RESTART_MS} after configuration." >&2
+  fi
   exit 2
 fi
 

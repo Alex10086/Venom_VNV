@@ -9,6 +9,8 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+from std_msgs.msg import Header
+from std_srvs.srv import SetBool
 from venom_manipulation_interfaces.msg import Detection2D, Detection2DArray
 
 try:
@@ -157,6 +159,7 @@ class FlameYoloDetector(Node):
         self.declare_parameter("image_size", 640)
         self.declare_parameter("device", "")
         self.declare_parameter("use_openvino_runtime", True)
+        self.declare_parameter("enabled", True)
 
         self.class_names = {
             str(name).strip()
@@ -169,13 +172,15 @@ class FlameYoloDetector(Node):
         self.device = str(self.get_parameter("device").value)
         self.publish_debug_images = bool(self.get_parameter("publish_debug_images").value)
         self.use_openvino_runtime = bool(self.get_parameter("use_openvino_runtime").value)
+        self.enabled = bool(self.get_parameter("enabled").value)
 
         self.bridge = CvBridge()
+        self.configured_model_path = str(self.get_parameter("model_path").value)
         self.openvino_model = None
-        model_path = str(self.get_parameter("model_path").value)
-        if self.use_openvino_runtime:
-            self.openvino_model = self._load_openvino_model(model_path)
-        self.model = None if self.openvino_model is not None else self._load_yolo_model(model_path)
+        self.model = None
+        self.model_path = ""
+        if self.enabled:
+            self._load_detector()
 
         self.detection_pub = self.create_publisher(
             Detection2D,
@@ -198,15 +203,77 @@ class FlameYoloDetector(Node):
             self.image_callback,
             10,
         )
+        self.enable_srv = self.create_service(SetBool, "~/set_enabled", self.set_enabled_callback)
 
         self.get_logger().info(
-            "Flame YOLO detector ready: model=%s classes=%s backend=%s"
+            "Flame YOLO detector ready: model=%s classes=%s backend=%s enabled=%s"
             % (
-                self.model_path,
+                self.model_path or self.configured_model_path,
                 sorted(self.class_names),
                 "openvino_runtime" if self.openvino_model is not None else "ultralytics",
+                self.enabled,
             )
         )
+
+    def _load_detector(self) -> bool:
+        self.openvino_model = None
+        self.model = None
+        if self.use_openvino_runtime:
+            self.openvino_model = self._load_openvino_model(self.configured_model_path)
+        if self.openvino_model is None:
+            self.model = self._load_yolo_model(self.configured_model_path)
+        return self.openvino_model is not None or self.model is not None
+
+    def set_enabled_callback(self, request: SetBool.Request, response: SetBool.Response):
+        if bool(request.data) == self.enabled:
+            response.success = True
+            response.message = f"already {'enabled' if self.enabled else 'disabled'}"
+            return response
+
+        if request.data:
+            if not self._load_detector():
+                response.success = False
+                response.message = f"failed to enable detector from {self.configured_model_path}"
+                return response
+            self.enabled = True
+            response.success = True
+            response.message = f"enabled model {self.model_path}"
+            self.get_logger().info(response.message)
+            return response
+
+        self.enabled = False
+        self.openvino_model = None
+        self.model = None
+        self._release_accelerator_memory()
+        self._publish_empty_detection()
+        response.success = True
+        response.message = "disabled and released model"
+        self.get_logger().info(response.message)
+        return response
+
+    def _release_accelerator_memory(self) -> None:
+        try:
+            import gc
+
+            gc.collect()
+        except Exception:
+            pass
+
+    def _publish_empty_detection(self) -> None:
+        header = Header()
+        header.stamp = self.get_clock().now().to_msg()
+        array_message = Detection2DArray()
+        array_message.header = header
+        array_message.detections = []
+        self.array_pub.publish(array_message)
+
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     def _resolve_model_path(self, model_path: str) -> Path:
         path = Path(os.path.expandvars(os.path.expanduser(model_path)))
@@ -252,6 +319,9 @@ class FlameYoloDetector(Node):
             return None
 
     def image_callback(self, message: Image) -> None:
+        if not self.enabled:
+            return
+
         try:
             bgr_image = self.bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
         except Exception as exc:
