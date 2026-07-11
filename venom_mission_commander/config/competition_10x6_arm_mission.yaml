@@ -22,7 +22,7 @@ waypoints:
     frame_id: map
     x: 0.0
     y: 0.0
-    yaw: 0.0
+    yaw: 3.14
     skip_navigation: true
     tasks:
       - name: start_delay
@@ -33,18 +33,18 @@ waypoints:
     description: 下方减速带中心通过点。
     kind: pass_through
     frame_id: map
-    x: 2.28
-    y: 0.0
-    yaw: 0.0
+    x: -2.315
+    y: 0
+    yaw: 3.14
     nav_timeout_sec: 200.0
 
   - name: task_point_1_pick
     description: 一号作业点；由 piper_mtc_tasks 按 black_block/golden_block 顺序完成双目标装载。
     kind: operation_stop
     frame_id: map
-    x: 4.08
-    y: 0.02
-    yaw: 1.5708
+    x: -4.303
+    y: 0.272
+    yaw: -1.57
     tasks:
       - name: enable_pick_yolo_for_point_1
         type: perception_control
@@ -75,9 +75,9 @@ waypoints:
     description: 二号作业点；电表识别、图像回传和语音播报后，提前开启火焰追踪，随后导航中持续对准。
     kind: operation_stop
     frame_id: map
-    x: 4.51
-    y: 3.86
-    yaw: -3.1416
+    x: -4.949
+    y: -4.265
+    yaw: 0
     tasks:
       - name: enable_digit_yolo_for_point_2
         type: perception_control
@@ -152,9 +152,9 @@ waypoints:
     description: 三号作业点；车辆到达前机械臂已持续对准火焰，到点后关闭追踪并确认识别，不执行夹取。
     kind: operation_stop
     frame_id: map
-    x: 2.12
-    y: 4.04
-    yaw: -3.1416
+    x: -1.967
+    y: -4.421
+    yaw: 0
     tasks:
       - name: stop_flame_tracking_at_point_3
         type: track_flame
@@ -184,18 +184,18 @@ waypoints:
   - name: pre_point_4_entry
     kind: operation_stop
     frame_id: map
-    x: 0.405
-    y: 2.00
-    yaw: -1.5708
+    x: -0.369
+    y: -2.00
+    yaw: 1.57
     nav_timeout_sec: 120.0
 
   - name: task_point_4_classify_place
     description: 四号作业点；由 piper_mtc_tasks 完成平台物体分类投放。
     kind: operation_stop
     frame_id: map
-    x: 0.405
-    y: 4.04
-    yaw: -1.5708
+    x: -0.369
+    y: -4.543
+    yaw: 1.57
     tasks:
       - name: enable_classification_yolo_for_point_4
         type: perception_control
@@ -227,8 +227,8 @@ waypoints:
     kind: return_park
     frame_id: map
     x: 0.0
-    y: 0.0
-    yaw: 0.0
+    y: -0.5
+    yaw: 1.57
     nav_timeout_sec: 450.0
     tasks:
       - name: finish_delay
