@@ -37,6 +37,7 @@ class FlameArmTracker(Node):
         self.declare_parameter("cmd_vel_yaw_feedforward_gain", 1.0)
         self.declare_parameter("deadband_rad", 0.010)
         self.declare_parameter("deadband_hysteresis_rad", 0.0)
+        self.declare_parameter("error_lowpass_alpha", 1.0)
         self.declare_parameter("target_center_offset_x_px", 0.0)
         self.declare_parameter("target_center_offset_y_px", 0.0)
         self.declare_parameter("min_consecutive_detections", 3)
@@ -57,6 +58,7 @@ class FlameArmTracker(Node):
         self.declare_parameter("max_yaw_velocity_integral", 0.30)
         self.declare_parameter("use_command_accumulator", False)
         self.declare_parameter("max_command_feedback_lead", 0.06)
+        self.declare_parameter("tracking_command_blend_alpha", 1.0)
         self.declare_parameter("yaw_joint_sign", 1.0)
         self.declare_parameter("pitch_joint5_sign", 1.0)
         self.declare_parameter("pitch_joint6_sign", 0.35)
@@ -94,6 +96,10 @@ class FlameArmTracker(Node):
         self.deadband_hysteresis_rad = max(
             0.0,
             float(self.get_parameter("deadband_hysteresis_rad").value),
+        )
+        self.error_lowpass_alpha = max(
+            0.0,
+            min(1.0, float(self.get_parameter("error_lowpass_alpha").value)),
         )
         self.target_center_offset_x_px = float(
             self.get_parameter("target_center_offset_x_px").value
@@ -148,6 +154,10 @@ class FlameArmTracker(Node):
         self.max_command_feedback_lead = max(
             0.0,
             float(self.get_parameter("max_command_feedback_lead").value),
+        )
+        self.tracking_command_blend_alpha = max(
+            0.0,
+            min(1.0, float(self.get_parameter("tracking_command_blend_alpha").value)),
         )
         self.yaw_joint_sign = float(self.get_parameter("yaw_joint_sign").value)
         self.pitch_joint5_sign = float(self.get_parameter("pitch_joint5_sign").value)
@@ -215,6 +225,7 @@ class FlameArmTracker(Node):
         self.observe_start_time: Optional[rclpy.time.Time] = None
         self.observe_start_joints: Optional[List[float]] = None
         self.last_commanded_joints: Optional[List[float]] = None
+        self.tracking_command_state: Optional[List[float]] = None
         self.filtered_target_x: Optional[float] = None
         self.filtered_target_y: Optional[float] = None
         self.filtered_target_vx = 0.0
@@ -231,6 +242,8 @@ class FlameArmTracker(Node):
         self.previous_error_time: Optional[rclpy.time.Time] = None
         self.previous_yaw_error = 0.0
         self.previous_pitch_error = 0.0
+        self.filtered_yaw_error: Optional[float] = None
+        self.filtered_pitch_error: Optional[float] = None
         self.filtered_yaw_error_rate = 0.0
         self.filtered_pitch_error_rate = 0.0
         self.previous_control_time: Optional[rclpy.time.Time] = None
@@ -254,6 +267,7 @@ class FlameArmTracker(Node):
             self.observe_start_time = self.get_clock().now()
             self.observe_start_joints = self._current_arm_joints()
             self.last_commanded_joints = list(self.observe_start_joints)
+            self.tracking_command_state = None
             self.latest_detection = None
             self.latest_detection_time = None
             self.consecutive_detection_count = 0
@@ -271,6 +285,7 @@ class FlameArmTracker(Node):
             self.observe_start_time = None
             self.observe_start_joints = None
             self.last_commanded_joints = None
+            self.tracking_command_state = None
             self.latest_detection = None
             self.latest_detection_time = None
             self.consecutive_detection_count = 0
@@ -284,7 +299,7 @@ class FlameArmTracker(Node):
     def detections_callback(self, message: Detection2DArray) -> None:
         selected = self._select_detection(message.detections)
         if selected is None:
-            self._clear_detection_state()
+            self.consecutive_detection_count = 0
             return
         now = self.get_clock().now()
         if self._is_detection_jump(selected):
@@ -432,10 +447,14 @@ class FlameArmTracker(Node):
         desired_center_x = camera.k[2] + self.target_center_offset_x_px
         desired_center_y = camera.k[5] + self.target_center_offset_y_px
 
-        yaw_error = math.atan2(target_x - desired_center_x, camera.k[0])
-        pitch_error = math.atan2(target_y - desired_center_y, camera.k[4])
-        yaw_error = self._apply_deadband_hysteresis(yaw_error, "yaw")
-        pitch_error = self._apply_deadband_hysteresis(pitch_error, "pitch")
+        raw_yaw_error = math.atan2(target_x - desired_center_x, camera.k[0])
+        raw_pitch_error = math.atan2(target_y - desired_center_y, camera.k[4])
+        filtered_yaw_error, filtered_pitch_error = self._lowpass_tracking_errors(
+            raw_yaw_error,
+            raw_pitch_error,
+        )
+        yaw_error = self._apply_deadband_hysteresis(filtered_yaw_error, "yaw")
+        pitch_error = self._apply_deadband_hysteresis(filtered_pitch_error, "pitch")
         self.last_yaw_error_rad = yaw_error
         self.last_pitch_error_rad = pitch_error
 
@@ -449,13 +468,23 @@ class FlameArmTracker(Node):
             self.yaw_velocity_integral = 0.0
             yaw_delta = 0.0
         else:
-            yaw_delta = self._servo_yaw_delta(
-                yaw_p,
-                yaw_d,
-                yaw_ff,
-                dt,
-                self._target_speed_scale(using_predicted_target),
-            )
+            speed_scale = self._target_speed_scale(using_predicted_target)
+            if self.use_dual_loop_yaw:
+                yaw_delta = self._dual_loop_yaw_delta(
+                    yaw_p,
+                    yaw_d,
+                    yaw_ff,
+                    dt,
+                    speed_scale,
+                )
+            else:
+                yaw_delta = self._servo_yaw_delta(
+                    yaw_p,
+                    yaw_d,
+                    yaw_ff,
+                    dt,
+                    speed_scale,
+                )
         pitch_p = self.kp_pitch * pitch_error
         pitch_d = self.kd_pitch * pitch_error_rate
         pitch_delta = pitch_p + pitch_d
@@ -472,6 +501,7 @@ class FlameArmTracker(Node):
             self.pitch_joint6_sign * pitch_delta,
             5,
         )
+        command = self._blend_tracking_command(command, feedback)
         self.last_command_saturated = any(
             [
                 abs(command[0] - current[0]) + 1e-9 < abs(yaw_delta),
@@ -481,7 +511,7 @@ class FlameArmTracker(Node):
         )
         self.last_yaw_debug = (
             "age=%.3f predicted=%s cx=%.1f raw_x=%.1f target_x=%.1f "
-            "yaw_error=%.4f yaw_p=%.4f yaw_d=%.4f "
+            "yaw_error=%.4f raw_yaw_error=%.4f yaw_p=%.4f yaw_d=%.4f "
             "yaw_rate=%.4f yaw_ff=%.4f desired_vel=%.4f measured_vel=%.4f "
             "vel_i=%.4f delta=%.4f base1=%.4f feedback1=%.4f cmd1=%.4f"
             % (
@@ -491,6 +521,7 @@ class FlameArmTracker(Node):
                 detection.center_x,
                 target_x,
                 yaw_error,
+                raw_yaw_error,
                 yaw_p,
                 yaw_d,
                 yaw_error_rate,
@@ -505,12 +536,13 @@ class FlameArmTracker(Node):
             )
         )
         self.last_pitch_debug = (
-            "cy=%.1f target_y=%.1f pitch_error=%.4f pitch_p=%.4f pitch_d=%.4f pitch_rate=%.4f "
+            "cy=%.1f target_y=%.1f pitch_error=%.4f raw_pitch_error=%.4f pitch_p=%.4f pitch_d=%.4f pitch_rate=%.4f "
             "joint5=%.4f cmd5=%.4f joint6=%.4f cmd6=%.4f"
             % (
                 camera.k[5],
                 target_y,
                 pitch_error,
+                raw_pitch_error,
                 pitch_p,
                 pitch_d,
                 pitch_error_rate,
@@ -675,7 +707,7 @@ class FlameArmTracker(Node):
     def _apply_delta_limit(self, current_value: float, desired_delta: float, joint_index: int) -> float:
         limit = abs(self.joint_delta_limits[joint_index])
         if limit <= 0.0:
-            delta = 0.0
+            delta = desired_delta
         else:
             delta = max(-limit, min(limit, desired_delta))
 
@@ -716,11 +748,64 @@ class FlameArmTracker(Node):
         self.previous_pitch_error = pitch_error
         return self.filtered_yaw_error_rate, self.filtered_pitch_error_rate
 
+    def _lowpass_tracking_errors(
+        self,
+        yaw_error: float,
+        pitch_error: float,
+    ) -> tuple[float, float]:
+        alpha = self.error_lowpass_alpha
+        if alpha >= 1.0:
+            self.filtered_yaw_error = yaw_error
+            self.filtered_pitch_error = pitch_error
+            return yaw_error, pitch_error
+
+        if self.filtered_yaw_error is None or self.filtered_pitch_error is None:
+            self.filtered_yaw_error = yaw_error
+            self.filtered_pitch_error = pitch_error
+            return yaw_error, pitch_error
+
+        self.filtered_yaw_error = alpha * yaw_error + (1.0 - alpha) * self.filtered_yaw_error
+        self.filtered_pitch_error = (
+            alpha * pitch_error + (1.0 - alpha) * self.filtered_pitch_error
+        )
+        return self.filtered_yaw_error, self.filtered_pitch_error
+
     def _limit_command_lead(self, commanded_value: float, feedback_value: float) -> float:
         lead = self.max_command_feedback_lead
         if lead <= 0.0:
             return commanded_value
         return max(feedback_value - lead, min(feedback_value + lead, commanded_value))
+
+    def _blend_tracking_command(
+        self,
+        raw_command: List[float],
+        feedback: List[float],
+    ) -> List[float]:
+        alpha = self.tracking_command_blend_alpha
+        if alpha >= 1.0:
+            self.tracking_command_state = list(raw_command)
+            return raw_command
+
+        controlled_indices = (0, 4, 5)
+        if self.tracking_command_state is None:
+            base = list(self.last_commanded_joints or feedback)
+        else:
+            base = list(self.tracking_command_state)
+
+        blended = list(raw_command)
+        for index in controlled_indices:
+            desired = raw_command[index]
+            start = base[index]
+            candidate = start + alpha * (desired - start)
+            candidate = self._limit_command_lead(candidate, feedback[index])
+            blended[index] = self._clip(
+                candidate,
+                self.joint_min_limits[index],
+                self.joint_max_limits[index],
+            )
+
+        self.tracking_command_state = list(blended)
+        return blended
 
     def _update_target_filter(
         self,
@@ -766,6 +851,8 @@ class FlameArmTracker(Node):
         self.previous_error_time = None
         self.previous_yaw_error = 0.0
         self.previous_pitch_error = 0.0
+        self.filtered_yaw_error = None
+        self.filtered_pitch_error = None
         self.filtered_yaw_error_rate = 0.0
         self.filtered_pitch_error_rate = 0.0
         self.previous_control_time = None
@@ -773,6 +860,7 @@ class FlameArmTracker(Node):
         self.yaw_velocity_integral = 0.0
         self.yaw_deadband_holding = True
         self.pitch_deadband_holding = True
+        self.tracking_command_state = None
 
     def _clear_detection_state(self) -> None:
         self.latest_detection = None
