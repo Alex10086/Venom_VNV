@@ -2266,7 +2266,8 @@ private:
     const XYZ & offset,
     const std::string & stage_name,
     uint8_t feedback_stage,
-    std::string & error_message)
+    std::string & error_message,
+    bool avoid_collisions = false)
   {
     if (goal_handle->is_canceling()) {
       error_message = "Task canceled";
@@ -2300,7 +2301,7 @@ private:
       std::max(parameters_.cartesian_step_size, 0.001),
       parameters_.cartesian_jump_threshold,
       trajectory_message,
-      false,
+      avoid_collisions,
       &error_code);
     if (achieved_fraction < 0.99) {
       error_message =
@@ -2416,15 +2417,18 @@ private:
         continue;
       }
 
+      bool reached_pregrasp = false;
       if (candidate.approach_max_distance > 1e-6 || candidate.approach_min_distance > 1e-6) {
         const auto pregrasp_pose =
           make_visual_style_pick_pose(object_center, candidate, candidate.pregrasp_offset);
         if (!has_visual_style_ik(pregrasp_pose, candidate_label.str() + " pregrasp")) {
-          RCLCPP_INFO(
+          RCLCPP_WARN(
             get_logger(),
-            "Pregrasp IK failed for visual-style pick %s, trying direct grasp.",
+            "Pregrasp IK failed for visual-style pick %s; skipping the candidate instead of "
+            "using an unconstrained direct-grasp path.",
             candidate_label.str().c_str());
-        } else
+          continue;
+        }
         if (!execute_arm_pose_goal(
             goal_handle,
             pregrasp_pose,
@@ -2434,17 +2438,45 @@ private:
         {
           RCLCPP_WARN(
             get_logger(),
-            "Pregrasp planning failed for visual-style pick %s, trying direct grasp.",
+            "Pregrasp planning failed for visual-style pick %s; skipping the candidate instead "
+            "of using an unconstrained direct-grasp path.",
             candidate_label.str().c_str());
+          continue;
         }
+        reached_pregrasp = true;
       }
 
-      if (execute_arm_pose_goal(
+      bool reached_grasp = false;
+      if (reached_pregrasp && pregrasp_distance > 1e-6) {
+        const XYZ approach_offset{
+          unit_direction.x * pregrasp_distance,
+          unit_direction.y * pregrasp_distance,
+          unit_direction.z * pregrasp_distance};
+        reached_grasp = execute_explicit_pose_offset(
+          goal_handle,
+          approach_offset,
+          "Moving linearly to grasp " + candidate_label.str(),
+          ExecuteTask::Goal::STAGE_MOVING_GRASP,
+          error_message,
+          true);
+        if (!reached_grasp) {
+          RCLCPP_WARN(
+            get_logger(),
+            "Cartesian approach failed for visual-style pick %s; refusing an unconstrained "
+            "fallback from the pregrasp pose: %s",
+            candidate_label.str().c_str(),
+            error_message.c_str());
+        }
+      } else {
+        reached_grasp = execute_arm_pose_goal(
           goal_handle,
           grasp_pose,
           "Moving to grasp " + candidate_label.str(),
           ExecuteTask::Goal::STAGE_MOVING_GRASP,
-          error_message))
+          error_message);
+      }
+
+      if (reached_grasp)
       {
         publish_feedback(
           goal_handle,

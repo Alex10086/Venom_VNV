@@ -343,6 +343,8 @@ class MissionCommander(Node):
 
     def handle_navigation_failure(self, waypoint: WaypointSpec) -> None:
         cancel_confirmed = self.navigator.cancel()
+        if not self.registry.cleanup():
+            self.get_logger().error('Failed to restore active task plugin resources after navigation failure')
         self.stop_active_flame_tracking(
             'navigation failure',
             force=self.mission_uses_service_flame_tracking(),
@@ -377,6 +379,8 @@ class MissionCommander(Node):
         return False
 
     def shutdown(self) -> None:
+        if not self.registry.cleanup():
+            self.get_logger().error('Failed to restore active task plugin resources during shutdown')
         self.stop_active_flame_tracking(
             'mission commander shutdown',
             force=self.mission_uses_service_flame_tracking(),

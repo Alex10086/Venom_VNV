@@ -11,6 +11,7 @@ from venom_mission_commander.host_report_task import execute_host_report_task
 from venom_mission_commander.models import TaskContext, TaskExecutionResult, TaskSpec
 from venom_mission_commander.perception_control_task import execute_perception_control_task
 from venom_mission_commander.read_meter_task import execute_read_meter_task
+from venom_mission_commander.ros_parameter_task import RosParameterTaskPlugin
 from venom_mission_commander.voice_report_task import execute_voice_report_task
 
 
@@ -25,6 +26,9 @@ class BaseTaskPlugin:
 
     def cancel(self) -> None:
         return None
+
+    def cleanup(self) -> bool:
+        return True
 
     def _sleep(self, seconds: float) -> None:
         time.sleep(max(float(seconds), 0.0))
@@ -235,6 +239,20 @@ class TaskPluginRegistry:
     def available_types(self) -> list[str]:
         return sorted(self.plugins)
 
+    def cleanup(self) -> bool:
+        success = True
+        for plugin in self.plugins.values():
+            try:
+                success = plugin.cleanup() and success
+            except Exception as exc:
+                success = False
+                node = getattr(plugin, 'node', None)
+                if node is not None and hasattr(node, 'get_logger'):
+                    node.get_logger().error(
+                        f'Task plugin cleanup failed ({plugin.task_type}): {exc}'
+                    )
+        return success
+
     def register_default_plugins(self, node: Any) -> None:
         for plugin in [
             DetectItemTaskPlugin(),
@@ -243,6 +261,7 @@ class TaskPluginRegistry:
             ReadMeterTaskPlugin(),
             HostReportTaskPlugin(),
             VoiceReportTaskPlugin(),
+            RosParameterTaskPlugin(),
             DetectFlameTaskPlugin(),
             TrackFlameTaskPlugin(),
             ClassifyPlaceTaskPlugin(),

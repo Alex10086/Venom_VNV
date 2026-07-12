@@ -91,7 +91,7 @@ waypoints:
 
 ```text
 detect_item, grasp_item, read_meter, host_report, voice_report,
-detect_flame, track_flame, classify_place, wait
+detect_flame, track_flame, classify_place, perception_control, ros_parameters, wait
 ```
 
 ## 3. Task parameters
@@ -101,6 +101,25 @@ detect_flame, track_flame, classify_place, wait
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `seconds` | `1.0` | 等待秒数 |
+
+### `ros_parameters`
+
+通过 `rcl_interfaces/srv/GetParameters` 和 `SetParametersAtomically` 临时修改另一个 ROS node 的参数，不调用 shell。`mode: set` 首次使用 `snapshot_key` 时读取并保存原值，再原子设置 `parameters`；`mode: restore` 使用 `restore_snapshot_key` 原子恢复，成功后删除快照。mission terminal navigation failure 或 commander shutdown 时会自动恢复仍活跃的快照。
+
+```yaml
+- type: ros_parameters
+  mode: set
+  node_name: /controller_server
+  snapshot_key: point4_teb_defaults
+  parameters:
+    FollowPath.min_obstacle_dist: 0.10
+    FollowPath.inflation_dist: 0.25
+- type: ros_parameters
+  mode: restore
+  restore_snapshot_key: point4_teb_defaults
+```
+
+可选的 `timeout_sec`（默认 `5.0`）和 `service_wait_timeout_sec`（默认 `2.0`）分别限制整个调用和等待服务的时间。服务 response 的 `successful`/`reason` 会决定任务成功与否；恢复失败时快照会保留，以便后续自动清理重试。
 
 ### `detect_item`
 

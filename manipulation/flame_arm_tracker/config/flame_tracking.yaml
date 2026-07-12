@@ -101,7 +101,7 @@ flame_arm_tracker:
     yaw_joint_sign: -1.0
     pitch_joint5_sign: 0.0
     pitch_joint6_sign: 0.0
-    observe_joints: [0.0, 0.45, -0.725, 0.0, 0.275, 0.0]
+    observe_joints: [0.0, 0.36, -0.58, 0.0, 0.22, 0.0]
     joint_delta_limits: [0.100, 0.0, 0.0, 0.0, 0.0, 0.0]
     joint_min_limits: [-2.10, -0.10, -2.60, -2.80, -1.60, -2.80]
     joint_max_limits: [2.10, 2.30, 0.20, 2.80, 1.60, 2.80]

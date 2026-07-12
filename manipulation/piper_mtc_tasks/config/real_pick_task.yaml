@@ -21,7 +21,7 @@ pick_place_server:
     plan_timeout_sec: 30.0
     approach_min_distance: 0.0
     approach_max_distance: 0.0
-    lift_min_distance: 0.05
+    lift_min_distance: 0.03
     lift_max_distance: 0.06
     retreat_min_distance: 0.0
     retreat_max_distance: 0.0

@@ -105,6 +105,34 @@ def make_test_commander(mission_config=None):
     return commander
 
 
+def test_terminal_navigation_failure_cleans_up_task_plugins():
+    commander = make_test_commander()
+    events = []
+    commander.registry = SimpleNamespace(cleanup=lambda: events.append('cleanup') or True)
+    commander.navigator.cancel = lambda: True
+    commander.stop_active_flame_tracking = lambda *args, **kwargs: True
+    commander.mission_uses_service_flame_tracking = lambda: False
+
+    commander.handle_navigation_failure(WaypointSpec('point4', 'map', 0.0, 0.0, 0.0))
+
+    assert events == ['cleanup']
+
+
+def test_shutdown_cleans_up_task_plugins():
+    commander = make_test_commander()
+    events = []
+    commander.registry = SimpleNamespace(cleanup=lambda: events.append('cleanup') or True)
+    commander.stop_active_flame_tracking = lambda *args, **kwargs: True
+    commander.mission_uses_service_flame_tracking = lambda: False
+    commander.cleanup_perception = lambda reason: True
+    commander.navigator.shutdown = lambda: None
+    commander.destroy_node = lambda: None
+
+    commander.shutdown()
+
+    assert events == ['cleanup']
+
+
 def make_spec(name, task_type, params):
     return TaskSpec(name=name, task_type=task_type, params=params)
 
@@ -1419,10 +1447,25 @@ def test_craic_arm_mission_uses_real_arm_backends_and_no_flame_grasp():
     disable_flame_yolo_task = task_named(mission, 'disable_flame_yolo_after_point_3')
     enable_classify_yolo_task = task_named(mission, 'enable_classification_yolo_for_point_4')
     disable_classify_yolo_task = task_named(mission, 'disable_classification_yolo_after_point_4')
+    task_point_1 = waypoint_named(mission, 'task_point_1_pick')
     task_point_2 = waypoint_named(mission, 'task_point_2_meter_voice')
     task_point_3 = waypoint_named(mission, 'task_point_3_flame_tracking')
 
+    task_point_1_names = [task['name'] for task in task_point_1['tasks']]
+    grasp_index = task_point_1_names.index('grasp_item_at_point_1')
+    assert task_point_1_names[grasp_index : grasp_index + 3] == [
+        'grasp_item_at_point_1',
+        'recover_arm_after_point_1',
+        'disable_pick_yolo_after_point_1',
+    ]
+    recover_arm_task = task_point_1['tasks'][grasp_index + 1]
+
     assert_dual_target_payload_grasp_task(grasp_task)
+    assert recover_arm_task['type'] == 'grasp_item'
+    assert recover_arm_task['backend'] == 'action'
+    assert recover_arm_task['action_name'] == '/manipulation/execute_task'
+    assert recover_arm_task['task_type_name'] == 'MOVE_HOME'
+    assert recover_arm_task['timeout_sec'] >= 30.0
 
     assert detect_flame_task['type'] == 'detect_flame'
     assert detect_flame_task['backend'] == 'topic'
@@ -1436,8 +1479,8 @@ def test_craic_arm_mission_uses_real_arm_backends_and_no_flame_grasp():
     assert start_flame_task['require_detection'] is False
     assert start_flame_task['service_name'] == '/flame_arm_tracker/set_enabled'
     assert start_flame_task['status_topic'] == '/flame_arm_tracker/status'
-    assert start_flame_task['wait_until_tracking'] is True
-    assert start_flame_task['require_target_acquired'] is True
+    assert start_flame_task['wait_until_tracking'] is False
+    assert start_flame_task['require_target_acquired'] is False
     assert start_flame_task['ready_timeout_sec'] == 4.0
     assert start_flame_task['target_class'] == 'fire'
     assert observe_wait_task['seconds'] >= 2.5
