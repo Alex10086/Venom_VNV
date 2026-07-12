@@ -303,6 +303,27 @@ def test_hunter_smac_teb_script_launches_nav2_with_expected_config():
     assert "angular:" in script_text
 
 
+def test_hunter_smac_teb_initial_pose_timeout_accepts_available_amcl_tf():
+    script_text = read_text("scripts/start_hunter_mid360_nav2_smac_teb.sh")
+
+    tf_helper = re.search(
+        r"(?ms)^wait_for_amcl_map_to_odom_tf\(\) \{\n(?P<body>.*?)^\}\n",
+        script_text,
+    )
+    assert tf_helper, "initial-pose recovery must use a bounded AMCL TF check"
+    assert 'timeout 2 ros2 run tf2_ros tf2_echo map odom' in tf_helper["body"]
+    assert 'grep -q "At time"' in tf_helper["body"]
+    assert "while" in tf_helper["body"]
+
+    initial_pose_block = re.search(
+        r"(?ms)^\s*if ! publish_initial_pose; then\n(?P<body>.*?)^\s*fi$",
+        script_text,
+    )
+    assert initial_pose_block
+    assert "wait_for_amcl_map_to_odom_tf" in initial_pose_block["body"]
+    assert "Failed to set initial pose via service" in initial_pose_block["body"]
+
+
 def test_hunter_smac_teb_script_reports_unexpected_child_exit_diagnostics():
     script_text = read_text("scripts/start_hunter_mid360_nav2_smac_teb.sh")
 

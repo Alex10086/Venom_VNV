@@ -43,7 +43,7 @@ waypoints:
     kind: operation_stop
     frame_id: map
     x: -4.303
-    y: 0.272
+    y: -0.5
     yaw: -1.57
     tasks:
       - name: enable_pick_yolo_for_point_1
@@ -148,6 +148,14 @@ waypoints:
         type: wait
         seconds: 2.5
 
+  - name: pre_point_3_entry
+    kind: operation_stop
+    frame_id: map
+    x: -2.569
+    y: -4.421
+    yaw: 0
+    nav_timeout_sec: 120.0
+
   - name: task_point_3_flame_tracking
     description: 三号作业点；车辆到达前机械臂已持续对准火焰，到点后关闭追踪并确认识别，不执行夹取。
     kind: operation_stop
@@ -184,7 +192,7 @@ waypoints:
   - name: pre_point_4_entry
     kind: operation_stop
     frame_id: map
-    x: -0.369
+    x: -0.279
     y: -2.00
     yaw: 1.57
     nav_timeout_sec: 120.0
@@ -193,7 +201,7 @@ waypoints:
     description: 四号作业点；由 piper_mtc_tasks 完成平台物体分类投放。
     kind: operation_stop
     frame_id: map
-    x: -0.369
+    x: -0.279
     y: -4.543
     yaw: 1.57
     tasks:

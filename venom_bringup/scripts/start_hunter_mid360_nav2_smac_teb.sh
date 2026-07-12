@@ -126,6 +126,27 @@ wait_for_lifecycle_active() {
     return 1
 }
 
+wait_for_amcl_map_to_odom_tf() {
+    local timeout_sec="$1"
+    local elapsed=0
+    local tf_output
+
+    echo "Waiting briefly for AMCL map->odom TF..."
+    while [ "$elapsed" -lt "$timeout_sec" ]; do
+        tf_output="$(timeout 2 ros2 run tf2_ros tf2_echo map odom 2>&1 || true)"
+        if grep -q "At time" <<<"$tf_output"; then
+            echo "AMCL map->odom TF is available."
+            return 0
+        fi
+
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    echo "Timed out waiting for AMCL map->odom TF." >&2
+    return 1
+}
+
 publish_initial_pose() {
     echo "Calling initial pose service x=$INITIAL_POSE_X y=$INITIAL_POSE_Y yaw=$INITIAL_POSE_YAW..."
     local initial_pose_qz
@@ -226,8 +247,13 @@ if [ "$AUTO_INITIAL_POSE" = "true" ]; then
         exit 1
     fi
     if ! publish_initial_pose; then
-        echo "Failed to set initial pose via service; stopping stack." >&2
-        exit 1
+        echo "Initial pose service timed out or failed; checking whether AMCL applied it..." >&2
+        if wait_for_amcl_map_to_odom_tf 3; then
+            echo "Initial pose appears to be active despite the service failure; continuing."
+        else
+            echo "Failed to set initial pose via service and AMCL map->odom TF is unavailable; stopping stack." >&2
+            exit 1
+        fi
     fi
 fi
 
