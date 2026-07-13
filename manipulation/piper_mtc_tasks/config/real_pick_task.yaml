@@ -107,7 +107,7 @@ pick_place_server:
       collision_scale_xy: 0.85
       collision_scale_z: 0.90
       workspace_min_xyz: [0.10, -0.35, 0.03]
-      workspace_max_xyz: [0.80, 0.35, 0.40]
+      workspace_max_xyz: [1.50, 0.35, 0.40]
       yaw_candidate_offsets: [0.0, -0.1745329252, 0.1745329252, -0.3490658504, 0.3490658504]
       target_position_candidate_offsets_xyz:
         - 0.0
