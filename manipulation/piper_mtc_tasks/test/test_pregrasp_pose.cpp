@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <limits>
+#include <vector>
 
 #include "piper_mtc_tasks/pregrasp_geometry.hpp"
 
@@ -83,6 +84,97 @@ TEST(IsCompleteCartesianPathFraction, AcceptsOnlyCompleteFiniteFractions)
   EXPECT_FALSE(is_complete_cartesian_path_fraction(0.99));
   EXPECT_FALSE(is_complete_cartesian_path_fraction(0.538));
   EXPECT_FALSE(is_complete_cartesian_path_fraction(std::numeric_limits<double>::quiet_NaN()));
+}
+
+TEST(HasValidAdjacentJointPositionSamples, AcceptsSmoothPathAndLimitBoundary)
+{
+  EXPECT_TRUE(has_valid_adjacent_joint_position_samples(
+      {{0.0, -0.1, 0.2, 0.3, -0.2, 0.0}, {0.1, -0.2, 0.3, 0.4, -0.1, 0.2}}, 0.2));
+  EXPECT_TRUE(has_valid_adjacent_joint_position_samples(
+      {{0.0}, {0.2}}, 0.2));
+  EXPECT_FALSE(has_valid_adjacent_joint_position_samples(
+      {{0.0}, {0.200001}}, 0.2));
+}
+
+TEST(HasValidAdjacentJointPositionSamples, RejectsInvalidPathsAndJointSixBranchFlip)
+{
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+
+  EXPECT_FALSE(has_valid_adjacent_joint_position_samples({}, 0.2));
+  EXPECT_FALSE(has_valid_adjacent_joint_position_samples({{0.0}}, 0.2));
+  EXPECT_FALSE(has_valid_adjacent_joint_position_samples({{0.0}, {}}, 0.2));
+  EXPECT_FALSE(has_valid_adjacent_joint_position_samples({{0.0}, {0.0, 0.1}}, 0.2));
+  EXPECT_FALSE(has_valid_adjacent_joint_position_samples({{0.0}, {nan}}, 0.2));
+  EXPECT_FALSE(has_valid_adjacent_joint_position_samples({{0.0}, {0.1}}, 0.0));
+  EXPECT_FALSE(has_valid_adjacent_joint_position_samples({{0.0}, {0.1}}, nan));
+  EXPECT_FALSE(has_valid_adjacent_joint_position_samples(
+      {{0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, {0.0, 0.0, 0.0, 0.0, 0.0, 6.28}}, 0.2));
+}
+
+TEST(HasValidTotalJointRangeSamples, AcceptsSmoothLowRangePathAndLimitBoundary)
+{
+  EXPECT_TRUE(has_valid_total_joint_range_samples(
+      {{0.0, -0.1, 0.2, 0.3, -0.2, 0.0}, {0.1, -0.2, 0.3, 0.4, -0.1, 0.2}}, 0.2));
+  EXPECT_TRUE(has_valid_total_joint_range_samples({{0.0}, {0.5}}, 0.5));
+}
+
+TEST(HasValidTotalJointRangeSamples, RejectsCumulativeJointSixFlipAndInvalidPaths)
+{
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const std::vector<std::vector<double>> cumulative_joint_six_flip{
+    {0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+    {0.0, 0.0, 0.0, 0.0, 0.0, 0.19},
+    {0.0, 0.0, 0.0, 0.0, 0.0, 0.38},
+    {0.0, 0.0, 0.0, 0.0, 0.0, 0.57}};
+
+  EXPECT_TRUE(has_valid_adjacent_joint_position_samples(cumulative_joint_six_flip, 0.2));
+  EXPECT_FALSE(has_valid_total_joint_range_samples(cumulative_joint_six_flip, 0.5));
+  EXPECT_FALSE(has_valid_total_joint_range_samples({}, 0.5));
+  EXPECT_FALSE(has_valid_total_joint_range_samples({{0.0}}, 0.5));
+  EXPECT_FALSE(has_valid_total_joint_range_samples({{0.0}, {}}, 0.5));
+  EXPECT_FALSE(has_valid_total_joint_range_samples({{0.0}, {0.0, 0.1}}, 0.5));
+  EXPECT_FALSE(has_valid_total_joint_range_samples({{0.0}, {nan}}, 0.5));
+  EXPECT_FALSE(has_valid_total_joint_range_samples({{0.0}, {0.1}}, 0.0));
+  EXPECT_FALSE(has_valid_total_joint_range_samples({{0.0}, {0.1}}, nan));
+}
+
+TEST(MakeAdaptiveReleaseBackoffAmounts, IncludesProgressiveCandidatesBelowOvershoot)
+{
+  EXPECT_EQ(
+    make_adaptive_release_backoff_amounts(0.1347, 0.04, 0.12),
+    (std::vector<double>{0.04, 0.08, 0.12}));
+}
+
+TEST(MakeAdaptiveReleaseBackoffAmounts, RetainsSmallOvershootCandidate)
+{
+  EXPECT_EQ(
+    make_adaptive_release_backoff_amounts(0.03, 0.04, 0.12),
+    (std::vector<double>{0.03, 0.04, 0.07, 0.08, 0.11, 0.12}));
+}
+
+TEST(MakeAdaptiveReleaseBackoffAmounts, SupportsZeroStepWithOvershootCandidate)
+{
+  EXPECT_EQ(
+    make_adaptive_release_backoff_amounts(0.03, 0.0, 0.12),
+    (std::vector<double>{0.03}));
+}
+
+TEST(MakeAdaptiveReleaseBackoffAmounts, RejectsInvalidAndDisabledInputs)
+{
+  EXPECT_TRUE(make_adaptive_release_backoff_amounts(0.0, 0.04, 0.12).empty());
+  EXPECT_TRUE(make_adaptive_release_backoff_amounts(0.03, 0.04, 0.0).empty());
+  EXPECT_TRUE(
+    make_adaptive_release_backoff_amounts(
+      std::numeric_limits<double>::quiet_NaN(), 0.04, 0.12)
+    .empty());
+  EXPECT_TRUE(
+    make_adaptive_release_backoff_amounts(
+      0.03, std::numeric_limits<double>::infinity(), 0.12)
+    .empty());
+  EXPECT_TRUE(
+    make_adaptive_release_backoff_amounts(
+      0.03, 0.04, -std::numeric_limits<double>::infinity())
+    .empty());
 }
 
 TEST(MakePlanningFramePostgraspEscapePose, UsesRecordedRadialSideEscapeOffset)

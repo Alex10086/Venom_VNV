@@ -1,5 +1,6 @@
 """Lightweight smoke/config tests for meter digit verification resources."""
 
+import ast
 import importlib.util
 from pathlib import Path
 
@@ -79,6 +80,39 @@ def launch_source(path):
     return path.read_text(encoding='utf-8')
 
 
+def competition_runtime_launch_arguments():
+    source = launch_source(COMPETITION_RUNTIME_LAUNCH_PATH)
+    module = ast.parse(source)
+    include = next(
+        node
+        for node in ast.walk(module)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == 'IncludeLaunchDescription'
+    )
+    launch_arguments = next(
+        keyword.value
+        for keyword in include.keywords
+        if keyword.arg == 'launch_arguments'
+    )
+    assert isinstance(launch_arguments, ast.Call)
+    assert isinstance(launch_arguments.func, ast.Attribute)
+    assert launch_arguments.func.attr == 'items'
+    assert isinstance(launch_arguments.func.value, ast.Dict)
+
+    return {
+        key.value: value.value
+        for key, value in zip(
+            launch_arguments.func.value.keys,
+            launch_arguments.func.value.values,
+        )
+        if isinstance(key, ast.Constant)
+        and isinstance(key.value, str)
+        and isinstance(value, ast.Constant)
+        and isinstance(value.value, str)
+    }
+
+
 def test_meter_digit_voice_mission_config_chain():
     tasks = tasks_for(MISSION_PATH)
 
@@ -136,6 +170,14 @@ def test_competition_runtime_launch_starts_yolo_nodes_disabled():
     assert "'classification_yolo_enabled': 'false'" in source
     assert "'flame_yolo_enabled': 'false'" in source
     assert "'enabled': False" in source
+
+
+def test_competition_runtime_uses_only_classification_yolo_for_box_detections():
+    launch_arguments = competition_runtime_launch_arguments()
+
+    assert launch_arguments['launch_color_box_detector'] == 'false'
+    assert launch_arguments['launch_classification_yolo_detector'] == 'true'
+    assert launch_arguments['launch_classification_yolo_bridge'] == 'true'
 
 
 def test_meter_verification_launches_use_realsense_camera_driver():

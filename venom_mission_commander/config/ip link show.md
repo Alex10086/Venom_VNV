@@ -16,7 +16,7 @@ ros2 launch grasp_target_fusion real_pick_vision.launch.py \
   launch_pick_yolo_bridge:=true \
   launch_classification_yolo_detector:=true \
   launch_classification_yolo_bridge:=true \
-  launch_color_box_detector:=true \
+  launch_color_box_detector:=false \
   launch_flame_tracking:=true \
   flame_use_yolo:=true \
   yolo_model_path:=$HOME/venom_ws/src/venom_vnv/perception/grasp_target_fusion/models/block_best.pt \

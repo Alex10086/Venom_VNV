@@ -98,7 +98,7 @@ def generate_launch_description():
         DeclareLaunchArgument("camera_namespace", default_value="camera"),
         DeclareLaunchArgument("camera_name", default_value="d435i"),
         DeclareLaunchArgument("depth_profile", default_value="640x480x15"),
-        DeclareLaunchArgument("color_profile", default_value="424x240x15"),
+        DeclareLaunchArgument("color_profile", default_value="640x480x15"),
         DeclareLaunchArgument("enable_color", default_value="true"),
         DeclareLaunchArgument("enable_depth", default_value="true"),
         DeclareLaunchArgument("enable_gyro", default_value="false"),

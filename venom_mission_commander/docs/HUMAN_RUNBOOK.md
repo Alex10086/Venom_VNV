@@ -343,12 +343,12 @@ ros2 launch venom_mission_commander mission_commander.launch.py \
 
 #### 四号点：`verify_point4_classify_place.yaml`
 
-依赖：Piper 控制、MoveIt/MTC、`/manipulation/execute_task`，以及分类投放所需的颜色框/物体前置状态。
+依赖：Piper 控制、MoveIt/MTC、`/manipulation/execute_task`，以及分类投放所需的 YOLO/物体前置状态。
 
 ```bash
 ros2 launch grasp_target_fusion real_pick_vision.launch.py \
   can_port:=can_piper \
-  launch_color_box_detector:=true \
+  launch_color_box_detector:=false \
   launch_flame_tracking:=false \
   launch_classification_yolo_detector:=true \
   launch_classification_yolo_bridge:=true \
@@ -358,6 +358,7 @@ ros2 launch grasp_target_fusion real_pick_vision.launch.py \
 注意：
 
 - `classification_yolo_model_path` 现在没有内置默认模型路径，四号点必须显式传入
+- 不要同时开启 `color_box_detector`；它和分类 YOLO 会向同一 detection topic 发布并导致目标有效状态抖动
 - 如果只想验证分类投放，不建议同时开启 flame tracking
 
 运行 verify：

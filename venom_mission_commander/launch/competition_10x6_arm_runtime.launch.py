@@ -68,7 +68,7 @@ def generate_launch_description():
                 'launch_classification_yolo_bridge': 'true',
                 'classification_yolo_enabled': 'false',
                 'classification_yolo_model_path': classification_yolo_model_path,
-                'launch_color_box_detector': 'true',
+                'launch_color_box_detector': 'false',
                 'launch_flame_tracking': 'true',
                 'flame_use_yolo': 'true',
                 'flame_yolo_enabled': 'false',

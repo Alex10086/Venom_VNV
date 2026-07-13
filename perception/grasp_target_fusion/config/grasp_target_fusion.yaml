@@ -46,6 +46,7 @@ classify_grasp_target_fusion:
     aligned_depth_topic: /camera/d435i/aligned_depth_to_color/image_raw
     detection_topic: /perception/classify/detections_2d
     detection_array_topic: /perception/classify/detections_2d_array
+    subscribe_single_detection_topic: false
     grasp_target_topic: /perception/classify/grasp_target
     target_valid_topic: /perception/classify/target_valid
     debug_topic: /perception/classify/grasp_target_debug
@@ -56,12 +57,13 @@ classify_grasp_target_fusion:
     default_target_size_xyz: [0.045, 0.045, 0.06]
     depth_roi_half_width_px: 8
     max_detection_age_sec: 30.0
+    target_loss_grace_sec: 0.75
     depth_scale: 0.001
     target_center_offset_px: [0.0, 0.0]
     target_center_offset_scale_xy: [0.0, 0.0]
     use_bbox_depth_sample: true
-    bbox_depth_sample_percentile: 80.0
+    bbox_depth_sample_percentile: 20.0
     bbox_depth_sample_region_scale_xy: [0.55, 0.55]
     bbox_depth_sample_center_offset_scale_xy: [0.0, 0.0]
-    target_ray_depth_offset_m: 0.195
+    target_ray_depth_offset_m: 0.0
     camera_target_offset_xyz: [0.0, 0.0, 0.0]

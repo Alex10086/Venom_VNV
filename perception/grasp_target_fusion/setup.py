@@ -21,6 +21,7 @@ setup(
         (os.path.join("share", package_name, "scripts"), glob("scripts/*.py")),
     ],
     install_requires=["setuptools", "ament_index_python"],
+    tests_require=["pytest"],
     zip_safe=True,
     maintainer="lzx2530",
     maintainer_email="2893478728@qq.com",

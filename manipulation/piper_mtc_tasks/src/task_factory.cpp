@@ -1,5 +1,7 @@
 #include "piper_mtc_tasks/task_factory.hpp"
 
+#include <cmath>
+
 #include <moveit/task_constructor/solvers/cartesian_path.h>
 #include <moveit/task_constructor/solvers/joint_interpolation.h>
 #include <moveit/task_constructor/solvers/pipeline_planner.h>
@@ -140,6 +142,54 @@ SceneOpenTopBin read_scene_open_top_bin(
 }
 
 }  // namespace
+
+bool validate_classification_observe_joint_positions(
+  const std::vector<double> & joint_positions,
+  std::string & error_message)
+{
+  if (joint_positions.empty()) {
+    error_message.clear();
+    return true;
+  }
+  if (joint_positions.size() != 6U) {
+    error_message =
+      "classification_place.observe_joint_positions must be empty or contain exactly 6 joint values.";
+    return false;
+  }
+  for (const double joint_position : joint_positions) {
+    if (!std::isfinite(joint_position)) {
+      error_message =
+        "classification_place.observe_joint_positions must contain only finite joint values.";
+      return false;
+    }
+  }
+  error_message.clear();
+  return true;
+}
+
+bool validate_classification_release_corrections(
+  const std::vector<XYZ> & release_corrections,
+  std::size_t box_count,
+  std::string & error_message)
+{
+  if (release_corrections.empty()) {
+    error_message.clear();
+    return true;
+  }
+  if (release_corrections.size() != box_count) {
+    error_message =
+      "classification_place.release_corrections_xyz must be empty or contain one correction per box.";
+    return false;
+  }
+  for (const auto & correction : release_corrections) {
+    if (!std::isfinite(correction.x) || !std::isfinite(correction.y) || !std::isfinite(correction.z)) {
+      error_message = "classification_place.release_corrections_xyz must contain only finite values.";
+      return false;
+    }
+  }
+  error_message.clear();
+  return true;
+}
 
 void declare_task_parameters(rclcpp::Node & node)
 {
@@ -322,6 +372,8 @@ void declare_task_parameters(rclcpp::Node & node)
   node.declare_parameter<double>("pre_place.hover_margin_z", 0.03);
   node.declare_parameter<bool>("classification_place.enabled", false);
   node.declare_parameter<std::vector<double>>(
+    "classification_place.observe_joint_positions", std::vector<double>{});
+  node.declare_parameter<std::vector<double>>(
     "classification_place.platform_slots_xyz",
     std::vector<double>{0.0, 0.20, 0.30, 0.0, 0.28, 0.30});
   node.declare_parameter<std::vector<std::string>>(
@@ -336,6 +388,8 @@ void declare_task_parameters(rclcpp::Node & node)
     "classification_place.lift_offset_xyz", {0.0, 0.0, 0.07});
   node.declare_parameter<std::vector<double>>(
     "classification_place.release_offset_xyz", {0.0, 0.0, 0.10});
+  node.declare_parameter<std::vector<double>>(
+    "classification_place.release_corrections_xyz", std::vector<double>{});
   node.declare_parameter<std::vector<double>>(
     "classification_place.grasp_orientation_rpy", {0.0, 1.57079632679, 1.57079632679});
   node.declare_parameter<std::vector<double>>(
@@ -714,6 +768,8 @@ TaskParameters load_task_parameters(rclcpp::Node & node)
     node.get_parameter("pre_place.hover_margin_z").as_double();
   parameters.classification_place.enabled =
     node.get_parameter("classification_place.enabled").as_bool();
+  parameters.classification_place.observe_joint_positions =
+    node.get_parameter("classification_place.observe_joint_positions").as_double_array();
   parameters.classification_place.platform_slots =
     read_xyz_triples_parameter(node, "classification_place.platform_slots_xyz");
   parameters.classification_place.platform_slot_classes =
@@ -726,6 +782,8 @@ TaskParameters load_task_parameters(rclcpp::Node & node)
     read_xyz_parameter(node, "classification_place.lift_offset_xyz");
   parameters.classification_place.release_offset =
     read_xyz_parameter(node, "classification_place.release_offset_xyz");
+  parameters.classification_place.release_corrections =
+    read_xyz_triples_parameter(node, "classification_place.release_corrections_xyz");
   parameters.classification_place.grasp_orientation =
     read_rpy_parameter(node, "classification_place.grasp_orientation_rpy");
   parameters.classification_place.release_orientation =

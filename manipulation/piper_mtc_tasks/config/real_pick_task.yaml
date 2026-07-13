@@ -177,13 +177,14 @@ pick_place_server:
       rpy: [0.0, 1.57079632679, 1.57079632679]
     classification_place:
       enabled: true
+      observe_joint_positions: [0.002599156, 1.108618532, -0.067578056, -0.046627812, -0.957291832, 0.094616256]
       # Payload tray order after the collection task:
       #   slot 0 = black_block, dropped into black_box
       #   slot 1 = golden_block, dropped into golden_box
       platform_slots_xyz:
         - -0.10
         - -0.31
-        - 0.30
+        - 0.292
         - 0.0
         - -0.31
         - 0.30
@@ -192,7 +193,8 @@ pick_place_server:
       pregrasp_offset_xyz: [0.0, 0.0, 0.07]
       lift_offset_xyz: [0.0, 0.0, 0.07]
       release_offset_xyz: [0.06, 0.0, 0.16]
-      grasp_orientation_rpy: [0.0, 1.57079632679, -1.57079632679]
+      release_corrections_xyz: [0.0, -0.04, 0.0, 0.0, 0.0, 0.0]
+      grasp_orientation_rpy: [0.0, 1.5184364492350666, -1.57079632679]
       release_orientation_rpy: [3.14159265359, -1.1780972451, -0.78539816339]
       release_workspace_min_xyz: [0.20, -0.20, 0.18]
       release_workspace_max_xyz: [1.0, 0.20, 0.40]
@@ -201,7 +203,7 @@ pick_place_server:
         - 0.0
         - 0.0
       move_home_before_platform_pick: true
-      use_direct_pregrasp_joint_approach: true
+      use_direct_pregrasp_joint_approach: false
       direct_pregrasp_approach_lift_z: 0.04
       direct_pregrasp_joint_duration_sec: 4.0
       direct_pregrasp_joint_goal_time_tolerance_sec: 8.0

@@ -143,14 +143,14 @@ ros2 launch venom_mission_commander mission_commander.launch.py \
 
 ## 任务 4：分类投放
 
-启动 Piper 控制、MoveIt/MTC、颜色框检测、分类 YOLO 和目标融合：
+启动 Piper 控制、MoveIt/MTC、分类 YOLO 和目标融合；关闭旧颜色框检测器，避免两个节点向同一分类 topic 发布：
 
 ```bash
 ros2 launch grasp_target_fusion real_pick_vision.launch.py \
   can_port:=can1 \
   launch_yolo_detector:=false \
   launch_yolo_bridge:=false \
-  launch_color_box_detector:=true \
+  launch_color_box_detector:=false \
   launch_flame_tracking:=false \
   launch_classification_yolo_detector:=true \
   launch_classification_yolo_bridge:=true \

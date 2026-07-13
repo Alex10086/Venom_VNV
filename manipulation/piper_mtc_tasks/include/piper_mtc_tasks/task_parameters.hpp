@@ -129,12 +129,14 @@ struct PrePlaceConfig
 struct ClassificationPlaceConfig
 {
   bool enabled{false};
+  std::vector<double> observe_joint_positions;
   std::vector<XYZ> platform_slots;
   std::vector<std::string> platform_slot_classes;
   std::vector<std::string> box_classes;
   XYZ pregrasp_offset{0.0, 0.0, 0.07};
   XYZ lift_offset{0.0, 0.0, 0.07};
   XYZ release_offset{0.0, 0.0, 0.10};
+  std::vector<XYZ> release_corrections;
   RPY grasp_orientation{0.0, 1.57079632679, 1.57079632679};
   RPY release_orientation{0.0, -1.57079632679, 0.0};
   XYZ release_workspace_min{-10.0, -10.0, -10.0};

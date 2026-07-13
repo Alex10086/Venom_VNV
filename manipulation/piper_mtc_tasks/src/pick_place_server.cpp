@@ -2335,12 +2335,23 @@ private:
     return true;
   }
 
+  struct CartesianPoseGoalOptions
+  {
+    std::optional<double> jump_threshold;
+    bool avoid_collisions{false};
+    bool require_complete_fraction{false};
+    std::optional<double> max_adjacent_joint_step_rad;
+    std::optional<double> max_joint_range_rad;
+    bool force_moveit_execution{false};
+  };
+
   bool execute_cartesian_pose_goal(
     const std::shared_ptr<GoalHandleExecuteTask> & goal_handle,
     const geometry_msgs::msg::PoseStamped & pose,
     const std::string & stage_name,
     uint8_t feedback_stage,
-    std::string & error_message)
+    std::string & error_message,
+    const CartesianPoseGoalOptions & options)
   {
     if (goal_handle->is_canceling()) {
       error_message = "Task canceled";
@@ -2369,15 +2380,51 @@ private:
     const double achieved_fraction = arm_move_group_->computeCartesianPath(
       std::vector<geometry_msgs::msg::Pose>{pose.pose},
       std::max(parameters_.cartesian_step_size, 0.001),
-      parameters_.cartesian_jump_threshold,
+      options.jump_threshold.value_or(parameters_.cartesian_jump_threshold),
       trajectory_message,
-      false,
+      options.avoid_collisions,
       &error_code);
-    if (achieved_fraction < 0.99) {
+    const bool has_accepted_fraction = options.require_complete_fraction ?
+      is_complete_cartesian_path_fraction(achieved_fraction) : achieved_fraction >= 0.99;
+    if (!has_accepted_fraction) {
       error_message =
         "Cartesian pose move for stage '" + stage_name + "' only achieved fraction " +
         std::to_string(achieved_fraction) + ".";
       return false;
+    }
+
+    if (options.max_adjacent_joint_step_rad) {
+      std::vector<std::vector<double>> joint_position_samples;
+      joint_position_samples.reserve(trajectory_message.joint_trajectory.points.size());
+      for (const auto & point : trajectory_message.joint_trajectory.points) {
+        joint_position_samples.push_back(point.positions);
+      }
+      if (!has_valid_adjacent_joint_position_samples(
+          joint_position_samples, *options.max_adjacent_joint_step_rad))
+      {
+        error_message =
+          "Cartesian pose trajectory for stage '" + stage_name +
+          "' has invalid joint samples or exceeds the maximum adjacent joint step of " +
+          std::to_string(*options.max_adjacent_joint_step_rad) + " rad.";
+        return false;
+      }
+    }
+
+    if (options.max_joint_range_rad) {
+      std::vector<std::vector<double>> joint_position_samples;
+      joint_position_samples.reserve(trajectory_message.joint_trajectory.points.size());
+      for (const auto & point : trajectory_message.joint_trajectory.points) {
+        joint_position_samples.push_back(point.positions);
+      }
+      if (!has_valid_total_joint_range_samples(
+          joint_position_samples, *options.max_joint_range_rad))
+      {
+        error_message =
+          "Cartesian pose trajectory for stage '" + stage_name +
+          "' has invalid joint samples or exceeds the maximum total joint range of " +
+          std::to_string(*options.max_joint_range_rad) + " rad.";
+        return false;
+      }
     }
 
     robot_trajectory::RobotTrajectory trajectory(
@@ -2396,7 +2443,27 @@ private:
     }
 
     trajectory.getRobotTrajectoryMsg(trajectory_message);
+    if (options.force_moveit_execution) {
+      return execute_arm_robot_trajectory_with_moveit(
+        trajectory_message, stage_name, error_message);
+    }
     return execute_arm_robot_trajectory(trajectory_message, stage_name, error_message);
+  }
+
+  bool execute_cartesian_pose_goal(
+    const std::shared_ptr<GoalHandleExecuteTask> & goal_handle,
+    const geometry_msgs::msg::PoseStamped & pose,
+    const std::string & stage_name,
+    uint8_t feedback_stage,
+    std::string & error_message)
+  {
+    return execute_cartesian_pose_goal(
+      goal_handle,
+      pose,
+      stage_name,
+      feedback_stage,
+      error_message,
+      CartesianPoseGoalOptions{});
   }
 
   VisualStylePickOutcome execute_visual_style_pick_to_lift(
@@ -2736,6 +2803,13 @@ private:
         "classification_place platform_slots, platform_slot_classes, and box_classes must have the same length.";
       return false;
     }
+    if (!validate_classification_observe_joint_positions(config.observe_joint_positions, error_message) ||
+      !validate_classification_release_corrections(
+        config.release_corrections, config.box_classes.size(), error_message))
+    {
+      return false;
+    }
+    error_message.clear();
     return true;
   }
 
@@ -3580,12 +3654,22 @@ private:
         "Moving to " + block_class + " platform grasp candidate " +
         std::to_string(ranked_index + 1) + "/" + std::to_string(ranked_candidates.size()) +
         " (source " + std::to_string(candidate.source_index) + ")";
-      if (!execute_arm_pose_goal(
+      constexpr double kClassificationCartesianJumpThreshold = 0.0;
+      constexpr double kClassificationMaxAdjacentJointStepRad = 0.2;
+      const CartesianPoseGoalOptions classification_cartesian_options{
+        kClassificationCartesianJumpThreshold,
+        true,
+        true,
+        kClassificationMaxAdjacentJointStepRad,
+        0.5,
+        true};
+      if (!execute_cartesian_pose_goal(
           goal_handle,
           make_pose_stamped(candidate.grasp_position, config.grasp_orientation),
           grasp_stage_name,
           ExecuteTask::Goal::STAGE_MOVING_GRASP,
-          candidate_error))
+          candidate_error,
+          classification_cartesian_options))
       {
         last_candidate_error = candidate_error;
         RCLCPP_WARN(
@@ -3649,6 +3733,7 @@ private:
 
   bool execute_classification_release_to_box(
     const std::shared_ptr<GoalHandleExecuteTask> & goal_handle,
+    std::size_t slot_index,
     const GraspTarget & box_target,
     std::string & error_message)
   {
@@ -3667,10 +3752,12 @@ private:
     };
 
     const auto & config = parameters_.classification_place;
+    const XYZ release_correction = config.release_corrections.empty() ?
+      XYZ{0.0, 0.0, 0.0} : config.release_corrections[slot_index];
     const XYZ ideal_release_position{
-      box_target.pose.position.x + config.release_offset.x,
-      box_target.pose.position.y + config.release_offset.y,
-      box_target.pose.position.z + config.release_offset.z};
+      box_target.pose.position.x + config.release_offset.x + release_correction.x,
+      box_target.pose.position.y + config.release_offset.y + release_correction.y,
+      box_target.pose.position.z + config.release_offset.z + release_correction.z};
     const XYZ projected_release_position = clamp_xyz(
       ideal_release_position,
       config.release_workspace_min,
@@ -3702,31 +3789,17 @@ private:
         ideal_release_position.x,
         ideal_release_position.y);
       const double nominal_radius = std::max(0.0, config.adaptive_release_nominal_xy_radius);
-      const double backoff_step = std::max(0.0, config.adaptive_release_backoff_step);
-      const double max_backoff = std::max(0.0, config.adaptive_release_max_backoff);
       const double lift_step = std::max(0.0, config.adaptive_release_lift_step);
       const double max_lift = std::max(0.0, config.adaptive_release_max_lift);
       const double overshoot = std::max(0.0, xy_radius - nominal_radius);
+      const auto backoff_amounts = make_adaptive_release_backoff_amounts(
+        overshoot,
+        config.adaptive_release_backoff_step,
+        config.adaptive_release_max_backoff);
 
-      if (overshoot > 1e-6 && max_backoff > 1e-6) {
+      if (!backoff_amounts.empty()) {
         const double radial_x = xy_radius > 1e-6 ? ideal_release_position.x / xy_radius : 1.0;
         const double radial_y = xy_radius > 1e-6 ? ideal_release_position.y / xy_radius : 0.0;
-        std::vector<double> backoff_amounts;
-        backoff_amounts.push_back(std::min(max_backoff, overshoot));
-        if (backoff_step > 1e-6) {
-          backoff_amounts.push_back(std::min(max_backoff, overshoot + backoff_step));
-          backoff_amounts.push_back(std::min(max_backoff, overshoot + 2.0 * backoff_step));
-        }
-
-        std::sort(backoff_amounts.begin(), backoff_amounts.end());
-        backoff_amounts.erase(
-          std::unique(
-            backoff_amounts.begin(),
-            backoff_amounts.end(),
-            [](double lhs, double rhs) {
-              return std::abs(lhs - rhs) < 1e-6;
-            }),
-          backoff_amounts.end());
 
         for (std::size_t i = 0; i < backoff_amounts.size(); ++i) {
           const double backoff = backoff_amounts[i];
@@ -4093,6 +4166,27 @@ private:
       }
 
       const auto & config = parameters_.classification_place;
+      if (!config.observe_joint_positions.empty()) {
+        publish_feedback(
+          goal_handle,
+          ExecuteTask::Goal::STAGE_MOVING_HOME,
+          "Moving to classification observe joint positions");
+        if (!execute_arm_joint_target(
+            config.observe_joint_positions,
+            "classification observe joint positions",
+            error_message))
+        {
+          finish_result(
+            goal_handle,
+            false,
+            ExecuteTask::Goal::STAGE_FAILED,
+            ExecuteTask::Result::ERROR_EXECUTION_FAILED,
+            error_message);
+          clear_current_task(nullptr);
+          return;
+        }
+      }
+
       std::vector<GraspTarget> box_targets(config.box_classes.size());
       for (std::size_t box_index = 0; box_index < config.box_classes.size(); ++box_index) {
         const auto & box_class = config.box_classes[box_index];
@@ -4164,7 +4258,8 @@ private:
           return;
         }
 
-        if (!execute_classification_release_to_box(goal_handle, box_targets[slot_index], error_message)) {
+        if (!execute_classification_release_to_box(
+            goal_handle, slot_index, box_targets[slot_index], error_message)) {
           finish_result(
             goal_handle,
             false,
@@ -5948,6 +6043,31 @@ private:
     return true;
   }
 
+  bool execute_arm_joint_target(
+    const std::vector<double> & joint_positions,
+    const std::string & action_label,
+    std::string & error_message)
+  {
+    arm_move_group_->clearPoseTargets();
+    arm_move_group_->setStartStateToCurrentState();
+    if (!arm_move_group_->setJointValueTarget(joint_positions)) {
+      error_message = "Failed to set arm joint target for '" + action_label +
+        "'; the target is invalid or outside joint limits.";
+      arm_move_group_->clearPoseTargets();
+      return false;
+    }
+
+    moveit::planning_interface::MoveGroupInterface::Plan arm_plan;
+    if (!static_cast<bool>(arm_move_group_->plan(arm_plan))) {
+      error_message = "Failed to plan collision-checked arm joint target for '" + action_label + "'.";
+      arm_move_group_->clearPoseTargets();
+      return false;
+    }
+
+    arm_move_group_->clearPoseTargets();
+    return execute_arm_plan(arm_plan, action_label, error_message);
+  }
+
   bool execute_direct_arm_joint_target(
     const std::vector<double> & joint_positions,
     double duration_sec,
@@ -6096,6 +6216,21 @@ private:
     return true;
   }
 
+  bool execute_arm_robot_trajectory_with_moveit(
+    const moveit_msgs::msg::RobotTrajectory & trajectory,
+    const std::string & action_label,
+    std::string & error_message)
+  {
+    const auto execution_result = arm_move_group_->execute(trajectory);
+    if (execution_result.val != moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
+      error_message =
+        "Failed to execute arm trajectory for '" + action_label +
+        "' with MoveIt error code " + std::to_string(execution_result.val) + ".";
+      return false;
+    }
+    return true;
+  }
+
   bool execute_arm_robot_trajectory(
     const moveit_msgs::msg::RobotTrajectory & trajectory,
     const std::string & action_label,
@@ -6110,14 +6245,7 @@ private:
         error_message);
     }
 
-    const auto execution_result = arm_move_group_->execute(trajectory);
-    if (execution_result.val != moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
-      error_message =
-        "Failed to execute arm trajectory for '" + action_label +
-        "' with MoveIt error code " + std::to_string(execution_result.val) + ".";
-      return false;
-    }
-    return true;
+    return execute_arm_robot_trajectory_with_moveit(trajectory, action_label, error_message);
   }
 
   bool execute_arm_plan(

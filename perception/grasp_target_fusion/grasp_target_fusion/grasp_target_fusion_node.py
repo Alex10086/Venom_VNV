@@ -15,8 +15,8 @@ from venom_manipulation_interfaces.msg import Detection2D, Detection2DArray, Gra
 
 
 class GraspTargetFusionNode(Node):
-    def __init__(self) -> None:
-        super().__init__("grasp_target_fusion")
+    def __init__(self, parameter_overrides=None) -> None:
+        super().__init__("grasp_target_fusion", parameter_overrides=parameter_overrides)
 
         self.declare_parameter("planning_frame", "base_link")
         self.declare_parameter("camera_frame", "camera_color_optical_frame")
@@ -24,6 +24,7 @@ class GraspTargetFusionNode(Node):
         self.declare_parameter("aligned_depth_topic", "/camera/camera/aligned_depth_to_color/image_raw")
         self.declare_parameter("detection_topic", "/perception/detections_2d")
         self.declare_parameter("detection_array_topic", "/perception/detections_2d_array")
+        self.declare_parameter("subscribe_single_detection_topic", True)
         self.declare_parameter("grasp_target_topic", "/perception/grasp_target")
         self.declare_parameter("target_valid_topic", "/perception/target_valid")
         self.declare_parameter("debug_topic", "/perception/grasp_target_debug")
@@ -34,6 +35,7 @@ class GraspTargetFusionNode(Node):
         self.declare_parameter("default_target_size_xyz", [0.045, 0.045, 0.06])
         self.declare_parameter("depth_roi_half_width_px", 2)
         self.declare_parameter("max_detection_age_sec", 0.5)
+        self.declare_parameter("target_loss_grace_sec", 0.0)
         self.declare_parameter("depth_scale", 0.001)
         self.declare_parameter("target_center_offset_px", [0.0, 0.0])
         self.declare_parameter("target_center_offset_scale_xy", [0.0, 0.0])
@@ -58,9 +60,15 @@ class GraspTargetFusionNode(Node):
             self.get_parameter("use_detection_header_stamp").value
         )
         self.require_single_target = bool(self.get_parameter("require_single_target").value)
+        self.subscribe_single_detection_topic = bool(
+            self.get_parameter("subscribe_single_detection_topic").value
+        )
         self.default_target_size = self.get_parameter("default_target_size_xyz").value
         self.depth_roi_half_width_px = int(self.get_parameter("depth_roi_half_width_px").value)
         self.max_detection_age_sec = float(self.get_parameter("max_detection_age_sec").value)
+        self.target_loss_grace_sec = max(
+            0.0, float(self.get_parameter("target_loss_grace_sec").value)
+        )
         self.depth_scale = float(self.get_parameter("depth_scale").value)
         self.target_center_offset_px = self.read_float_pair_parameter("target_center_offset_px")
         self.target_center_offset_scale_xy = self.read_float_pair_parameter(
@@ -104,6 +112,8 @@ class GraspTargetFusionNode(Node):
         self.latest_detection: Optional[Detection2D] = None
         self.latest_detection_stamp = None
         self.latest_detection_count = 0
+        self.latest_matching_detection_received_time = None
+        self.target_visible_in_current_frame = False
         self._warned_camera_info_frame_mismatch = False
         self._warned_depth_frame_mismatch = False
         self._warned_detection_frame_mismatch = False
@@ -139,13 +149,15 @@ class GraspTargetFusionNode(Node):
             self.depth_callback,
             10,
         )
-        self.create_subscription(
-            Detection2D,
-            self.get_parameter("detection_topic").value,
-            self.detection_callback,
-            10,
-        )
-        self.create_subscription(
+        self.single_detection_subscription = None
+        if self.subscribe_single_detection_topic:
+            self.single_detection_subscription = self.create_subscription(
+                Detection2D,
+                self.get_parameter("detection_topic").value,
+                self.detection_callback,
+                10,
+            )
+        self.detection_array_subscription = self.create_subscription(
             Detection2DArray,
             self.get_parameter("detection_array_topic").value,
             self.detection_array_callback,
@@ -158,6 +170,8 @@ class GraspTargetFusionNode(Node):
         for parameter in parameters:
             if parameter.name == "target_class":
                 self.update_target_classes(str(parameter.value))
+                self.clear_latest_detection()
+                self.publish_target_valid(False)
                 self.get_logger().info(
                     "Updated grasp target class filter to '%s'" % self.target_class_label
                 )
@@ -170,6 +184,12 @@ class GraspTargetFusionNode(Node):
                 self.max_detection_age_sec = float(parameter.value)
                 self.get_logger().info(
                     "Updated max_detection_age_sec to %.3f" % self.max_detection_age_sec
+                )
+            elif parameter.name == "target_loss_grace_sec":
+                self.target_loss_grace_sec = max(0.0, float(parameter.value))
+                self.get_logger().info(
+                    "Updated target_loss_grace_sec to %.3f"
+                    % self.target_loss_grace_sec
                 )
             elif parameter.name == "min_confidence":
                 self.min_confidence = float(parameter.value)
@@ -232,6 +252,8 @@ class GraspTargetFusionNode(Node):
                 % (message.class_name.lower(), self.target_class_label)
             )
             return
+        self.target_visible_in_current_frame = True
+        self.latest_matching_detection_received_time = self.get_clock().now()
         self.latest_detection = message
         if (
             not self.use_detection_header_stamp
@@ -251,12 +273,14 @@ class GraspTargetFusionNode(Node):
             if self.detection_matches_target_class(detection)
         ]
         self.latest_detection_count = len(matching_detections)
+        self.target_visible_in_current_frame = bool(matching_detections)
         if len(matching_detections) >= 1:
             selected = max(matching_detections, key=lambda detection: detection.confidence)
             self.detection_callback(selected)
+        elif self.is_within_target_loss_grace():
+            return
         else:
-            self.latest_detection = None
-            self.latest_detection_stamp = None
+            self.clear_latest_detection()
             self.publish_target_valid(False)
 
     def try_publish_grasp_target(self) -> None:
@@ -482,7 +506,34 @@ class GraspTargetFusionNode(Node):
         return detection.class_name.strip().lower() in self.target_classes
 
     def refresh_target_status(self) -> None:
+        if self.target_loss_grace_sec > 0.0 and self.latest_detection is not None:
+            if self.is_within_target_loss_grace():
+                if not self.target_visible_in_current_frame:
+                    return
+            else:
+                self.clear_latest_detection()
+                self.publish_target_valid(False)
+                return
         self.has_valid_detection()
+
+    def is_within_target_loss_grace(self) -> bool:
+        if (
+            self.target_loss_grace_sec <= 0.0
+            or self.latest_detection is None
+            or self.latest_matching_detection_received_time is None
+        ):
+            return False
+        elapsed = (
+            self.get_clock().now() - self.latest_matching_detection_received_time
+        ).nanoseconds / 1e9
+        return elapsed <= self.target_loss_grace_sec
+
+    def clear_latest_detection(self) -> None:
+        self.latest_detection = None
+        self.latest_detection_stamp = None
+        self.latest_detection_count = 0
+        self.latest_matching_detection_received_time = None
+        self.target_visible_in_current_frame = False
 
     def compute_projection_center(self, detection: Detection2D) -> Tuple[float, float]:
         return (

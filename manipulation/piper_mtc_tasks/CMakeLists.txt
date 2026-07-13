@@ -172,6 +172,21 @@ if(BUILD_TESTING)
     geometry_msgs
     rclcpp
   )
+
+  if(moveit_task_constructor_core_FOUND AND moveit_task_constructor_msgs_FOUND)
+    ament_add_gtest(test_task_parameters
+      test/test_task_parameters.cpp
+    )
+    target_include_directories(test_task_parameters PRIVATE
+      include
+    )
+    target_link_libraries(test_task_parameters
+      ${PROJECT_NAME}_core
+    )
+    ament_target_dependencies(test_task_parameters
+      rclcpp
+    )
+  endif()
 endif()
 
 install(

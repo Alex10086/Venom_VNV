@@ -1572,13 +1572,25 @@ def test_verify_point4_classify_place_matches_craic_arm_mission():
     assert verify_waypoint['skip_navigation'] is True
     assert verify_waypoint['kind'] == task_point_4_classify_place['kind']
     assert verify_waypoint['frame_id'] == task_point_4_classify_place['frame_id']
-    assert verify_waypoint['tasks'] == task_point_4_classify_place['tasks']
+    expected_task_names = [
+        'enable_classification_yolo_for_point_4',
+        'classify_and_place_object',
+        'disable_classification_yolo_after_point_4',
+    ]
+    expected_tasks = [
+        task_named(craic_arm_mission, task_name)
+        for task_name in expected_task_names
+    ]
+    assert verify_waypoint['tasks'] == expected_tasks
+    assert [task['name'] for task in verify_waypoint['tasks']] == expected_task_names
+    assert all(task['type'] != 'ros_parameters' for task in verify_waypoint['tasks'])
 
     classify_task = task_named(mission, 'classify_and_place_object')
 
     assert classify_task['type'] == 'classify_place'
     assert classify_task['backend'] == 'action'
     assert classify_task['task_type_name'] == 'CLASSIFY_PLATFORM_TO_COLOR_BOXES'
+    assert classify_task['timeout_sec'] >= 300.0
 
 
 def test_verify_point3_flame_tracking_uses_flame_pipeline_topic():
