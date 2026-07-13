@@ -1535,6 +1535,19 @@ def assert_perception_control_task(task, service_name, mode):
 
 def test_verify_point1_grasp_uses_dual_target_payload_action():
     mission = load_yaml(VERIFY_POINT1_GRASP_MISSION_PATH)
+    craic_arm_mission = load_yaml(CRAIC_ARM_MISSION_PATH)
+
+    assert len(mission['waypoints']) == 1
+    verify_waypoint = mission['waypoints'][0]
+    task_point_1_pick = waypoint_named(craic_arm_mission, 'task_point_1_pick')
+
+    assert verify_waypoint['x'] == task_point_1_pick['x']
+    assert verify_waypoint['y'] == task_point_1_pick['y']
+    assert verify_waypoint['yaw'] == task_point_1_pick['yaw']
+    assert verify_waypoint['skip_navigation'] is True
+    assert verify_waypoint['kind'] == task_point_1_pick['kind']
+    assert verify_waypoint['frame_id'] == task_point_1_pick['frame_id']
+    assert verify_waypoint['tasks'] == task_point_1_pick['tasks']
 
     grasp_task = task_named(mission, 'grasp_item_at_point_1')
 

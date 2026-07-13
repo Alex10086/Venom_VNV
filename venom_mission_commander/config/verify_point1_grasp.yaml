@@ -8,22 +8,27 @@
 mission:
   id: verify_point1_grasp
   loop: false
-  stop_on_task_failure: true
+  stop_on_task_failure: false
+  nav_timeout_sec: 350.0
+  retry_count: 1
 
 waypoints:
   - name: verify_point1_grasp_station
-    description: 跳过导航，只验证一号作业点双目标装载 action 链路。
-    frame_id: map
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    skip_navigation: true
+    description: 使用总任务一号作业点配置，默认跳过导航验证双目标装载链路。
     kind: operation_stop
+    frame_id: map
+    x: -4.303
+    y: -0.50
+    yaw: -1.57
+    skip_navigation: true
     tasks:
-      - name: wait_for_arm_and_vision
-        type: wait
-        seconds: 1.0
-
+      - name: enable_pick_yolo_for_point_1
+        type: perception_control
+        service_name: /pick_yolo_detector/set_enabled
+        mode: start
+        timeout_sec: 8.0
+        service_wait_timeout_sec: 3.0
+        settle_sec: 0.5
       - name: grasp_item_at_point_1
         type: grasp_item
         backend: action
@@ -34,3 +39,10 @@ waypoints:
         retry_count: 0
         retry_backoff_sec: 0.5
         output_key: grasped_object
+      - name: disable_pick_yolo_after_point_1
+        type: perception_control
+        service_name: /pick_yolo_detector/set_enabled
+        mode: stop
+        timeout_sec: 5.0
+        service_wait_timeout_sec: 2.0
+        settle_sec: 0.2
