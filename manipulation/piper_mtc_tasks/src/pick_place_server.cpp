@@ -2334,6 +2334,70 @@ private:
     return true;
   }
 
+  bool execute_cartesian_pose_goal(
+    const std::shared_ptr<GoalHandleExecuteTask> & goal_handle,
+    const geometry_msgs::msg::PoseStamped & pose,
+    const std::string & stage_name,
+    uint8_t feedback_stage,
+    std::string & error_message)
+  {
+    if (goal_handle->is_canceling()) {
+      error_message = "Task canceled";
+      return false;
+    }
+
+    publish_feedback(goal_handle, feedback_stage, stage_name);
+
+    auto current_state = arm_move_group_->getCurrentState(5.0);
+    if (!current_state) {
+      error_message = "Failed to query current arm state before Cartesian pose move.";
+      return false;
+    }
+
+    const auto current_pose = arm_move_group_->getCurrentPose(parameters_.hand_frame);
+    const double dx = pose.pose.position.x - current_pose.pose.position.x;
+    const double dy = pose.pose.position.y - current_pose.pose.position.y;
+    const double dz = pose.pose.position.z - current_pose.pose.position.z;
+    const double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+    if (distance <= 1e-6) {
+      return true;
+    }
+
+    moveit_msgs::msg::RobotTrajectory trajectory_message;
+    moveit_msgs::msg::MoveItErrorCodes error_code;
+    const double achieved_fraction = arm_move_group_->computeCartesianPath(
+      std::vector<geometry_msgs::msg::Pose>{pose.pose},
+      std::max(parameters_.cartesian_step_size, 0.001),
+      parameters_.cartesian_jump_threshold,
+      trajectory_message,
+      false,
+      &error_code);
+    if (achieved_fraction < 0.99) {
+      error_message =
+        "Cartesian pose move for stage '" + stage_name + "' only achieved fraction " +
+        std::to_string(achieved_fraction) + ".";
+      return false;
+    }
+
+    robot_trajectory::RobotTrajectory trajectory(
+      arm_move_group_->getRobotModel(),
+      parameters_.arm_group_name);
+    trajectory.setRobotTrajectoryMsg(*current_state, trajectory_message);
+
+    trajectory_processing::IterativeParabolicTimeParameterization time_parameterization;
+    if (!time_parameterization.computeTimeStamps(
+        trajectory,
+        parameters_.cartesian_velocity_scaling,
+        parameters_.cartesian_acceleration_scaling))
+    {
+      error_message = "Failed to time-parameterize Cartesian pose trajectory.";
+      return false;
+    }
+
+    trajectory.getRobotTrajectoryMsg(trajectory_message);
+    return execute_arm_robot_trajectory(trajectory_message, stage_name, error_message);
+  }
+
   VisualStylePickOutcome execute_visual_style_pick_to_lift(
     const std::shared_ptr<GoalHandleExecuteTask> & goal_handle,
     const std::vector<TaskParameters> & pick_candidates,
@@ -2416,6 +2480,7 @@ private:
         continue;
       }
 
+      bool reached_pregrasp = false;
       if (candidate.approach_max_distance > 1e-6 || candidate.approach_min_distance > 1e-6) {
         const auto pregrasp_pose =
           make_visual_style_pick_pose(object_center, candidate, candidate.pregrasp_offset);
@@ -2436,15 +2501,27 @@ private:
             get_logger(),
             "Pregrasp planning failed for visual-style pick %s, trying direct grasp.",
             candidate_label.str().c_str());
+        } else {
+          reached_pregrasp = true;
         }
       }
 
-      if (execute_arm_pose_goal(
+      const std::string grasp_stage_name = "Moving to grasp " + candidate_label.str();
+      const bool reached_grasp =
+        reached_pregrasp ?
+        execute_cartesian_pose_goal(
           goal_handle,
           grasp_pose,
-          "Moving to grasp " + candidate_label.str(),
+          grasp_stage_name,
           ExecuteTask::Goal::STAGE_MOVING_GRASP,
-          error_message))
+          error_message) :
+        execute_arm_pose_goal(
+          goal_handle,
+          grasp_pose,
+          grasp_stage_name,
+          ExecuteTask::Goal::STAGE_MOVING_GRASP,
+          error_message);
+      if (reached_grasp)
       {
         publish_feedback(
           goal_handle,
