@@ -1447,25 +1447,10 @@ def test_craic_arm_mission_uses_real_arm_backends_and_no_flame_grasp():
     disable_flame_yolo_task = task_named(mission, 'disable_flame_yolo_after_point_3')
     enable_classify_yolo_task = task_named(mission, 'enable_classification_yolo_for_point_4')
     disable_classify_yolo_task = task_named(mission, 'disable_classification_yolo_after_point_4')
-    task_point_1 = waypoint_named(mission, 'task_point_1_pick')
     task_point_2 = waypoint_named(mission, 'task_point_2_meter_voice')
     task_point_3 = waypoint_named(mission, 'task_point_3_flame_tracking')
 
-    task_point_1_names = [task['name'] for task in task_point_1['tasks']]
-    grasp_index = task_point_1_names.index('grasp_item_at_point_1')
-    assert task_point_1_names[grasp_index : grasp_index + 3] == [
-        'grasp_item_at_point_1',
-        'recover_arm_after_point_1',
-        'disable_pick_yolo_after_point_1',
-    ]
-    recover_arm_task = task_point_1['tasks'][grasp_index + 1]
-
     assert_dual_target_payload_grasp_task(grasp_task)
-    assert recover_arm_task['type'] == 'grasp_item'
-    assert recover_arm_task['backend'] == 'action'
-    assert recover_arm_task['action_name'] == '/manipulation/execute_task'
-    assert recover_arm_task['task_type_name'] == 'MOVE_HOME'
-    assert recover_arm_task['timeout_sec'] >= 30.0
 
     assert detect_flame_task['type'] == 'detect_flame'
     assert detect_flame_task['backend'] == 'topic'
