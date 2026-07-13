@@ -21,7 +21,7 @@ pick_place_server:
     plan_timeout_sec: 30.0
     approach_min_distance: 0.0
     approach_max_distance: 0.0
-    lift_min_distance: 0.05
+    lift_min_distance: 0.03
     lift_max_distance: 0.06
     retreat_min_distance: 0.0
     retreat_max_distance: 0.0
@@ -100,8 +100,11 @@ pick_place_server:
       lock_lateral_offsets_to_zero: true
       robust_candidate_enabled: true
       default_target_size_xyz: [0.044, 0.044, 0.044]
-      target_position_bias_xyz: [0.215, -0.0025, 0.05]  # 目标点偏置，单位为米
+      target_position_bias_xyz: [0.215, -0.010, 0.045]  # 目标点偏置，单位为米
       pregrasp_distance: 0.07
+      postgrasp_escape_enabled: true
+      postgrasp_escape_retreat_distance: 0.05
+      postgrasp_escape_avoid_collisions: true
       grasp_clearance: 0.003
       grasp_z_offset: 0.05
       collision_scale_xy: 0.85

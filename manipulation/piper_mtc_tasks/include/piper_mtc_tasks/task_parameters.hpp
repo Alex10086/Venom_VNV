@@ -60,6 +60,9 @@ struct VisionTargetConfig
   double wait_after_home_timeout_sec{2.0};
   double min_target_confidence{0.7};
   double pregrasp_distance{0.07};
+  bool postgrasp_escape_enabled{true};
+  double postgrasp_escape_retreat_distance{0.05};
+  bool postgrasp_escape_avoid_collisions{true};
   double grasp_clearance{0.01};
   double grasp_z_offset{0.0};
   double collision_scale_xy{0.85};

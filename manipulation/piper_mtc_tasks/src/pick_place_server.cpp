@@ -47,6 +47,7 @@
 #include <venom_manipulation_interfaces/msg/grasp_target.hpp>
 
 #include "piper_mtc_tasks/scene_manager.hpp"
+#include "piper_mtc_tasks/pregrasp_geometry.hpp"
 #include "piper_mtc_tasks/stage_builders.hpp"
 #include "piper_mtc_tasks/task_factory.hpp"
 
@@ -2430,6 +2431,8 @@ private:
       const auto & candidate = pick_candidates[candidate_index];
       const XYZ & object_center = candidate.pickup_object.center;
       const XYZ approach_direction = candidate.approach_direction;
+      const bool uses_radial_side_pregrasp =
+        normalize_class_name(candidate.vision_target.grasp_strategy) == "radial_side";
       const double approach_direction_norm = std::sqrt(
         approach_direction.x * approach_direction.x +
         approach_direction.y * approach_direction.y +
@@ -2441,10 +2444,25 @@ private:
           approach_direction.y / approach_direction_norm,
           approach_direction.z / approach_direction_norm};
       }
-      const double pregrasp_distance =
-        (candidate.grasp_target_offset.x - candidate.pregrasp_offset.x) * unit_direction.x +
-        (candidate.grasp_target_offset.y - candidate.pregrasp_offset.y) * unit_direction.y +
-        (candidate.grasp_target_offset.z - candidate.pregrasp_offset.z) * unit_direction.z;
+      double pregrasp_distance = 0.0;
+      if (uses_radial_side_pregrasp) {
+        if (!std::isfinite(approach_direction.x) ||
+          !std::isfinite(approach_direction.y) ||
+          !std::isfinite(approach_direction.z) ||
+          !std::isfinite(approach_direction_norm) || approach_direction_norm <= 1e-6)
+        {
+          RCLCPP_WARN(
+            get_logger(),
+            "Skipping visual-style pick %s candidate %zu: invalid approach direction=(%.6f, %.6f, %.6f)",
+            pick_label.c_str(), candidate_index + 1,
+            approach_direction.x, approach_direction.y, approach_direction.z);
+          continue;
+        }
+        pregrasp_distance =
+          (candidate.grasp_target_offset.x - candidate.pregrasp_offset.x) * unit_direction.x +
+          (candidate.grasp_target_offset.y - candidate.pregrasp_offset.y) * unit_direction.y +
+          (candidate.grasp_target_offset.z - candidate.pregrasp_offset.z) * unit_direction.z;
+      }
       std::ostringstream candidate_label;
       candidate_label << pick_label << " candidate " << (candidate_index + 1) << "/" <<
         pick_candidates.size() << " rpy=(" << std::fixed << std::setprecision(4) <<
@@ -2482,9 +2500,22 @@ private:
 
       bool reached_pregrasp = false;
       if (candidate.approach_max_distance > 1e-6 || candidate.approach_min_distance > 1e-6) {
-        const auto pregrasp_pose =
-          make_visual_style_pick_pose(object_center, candidate, candidate.pregrasp_offset);
-        if (!has_visual_style_ik(pregrasp_pose, candidate_label.str() + " pregrasp")) {
+        std::optional<geometry_msgs::msg::PoseStamped> pregrasp_pose;
+        if (uses_radial_side_pregrasp) {
+          pregrasp_pose = make_planning_frame_pregrasp_pose(
+            grasp_pose, approach_direction, pregrasp_distance);
+        } else {
+          pregrasp_pose = make_visual_style_pick_pose(
+            object_center, candidate, candidate.pregrasp_offset);
+        }
+        if (!pregrasp_pose) {
+          RCLCPP_WARN(
+            get_logger(),
+            "Skipping visual-style pick %s: invalid approach direction for pregrasp.",
+            candidate_label.str().c_str());
+          continue;
+        }
+        if (!has_visual_style_ik(*pregrasp_pose, candidate_label.str() + " pregrasp")) {
           RCLCPP_INFO(
             get_logger(),
             "Pregrasp IK failed for visual-style pick %s, trying direct grasp.",
@@ -2492,7 +2523,7 @@ private:
         } else
         if (!execute_arm_pose_goal(
             goal_handle,
-            pregrasp_pose,
+            *pregrasp_pose,
             "Moving to pregrasp " + candidate_label.str(),
             ExecuteTask::Goal::STAGE_MOVING_PREGRASP,
             error_message))
@@ -2664,7 +2695,10 @@ private:
             goal_handle,
             ExecuteTask::Goal::STAGE_LIFTING,
             "Lifting " + candidate_label.str());
-          if (!execute_explicit_lift(goal_handle, error_message)) {
+          const std::optional<XYZ> escape_approach_direction =
+            uses_radial_side_pregrasp && candidate.vision_target.compute_grasp_offsets ?
+            std::optional<XYZ>(approach_direction) : std::nullopt;
+          if (!execute_explicit_lift(goal_handle, error_message, escape_approach_direction)) {
             return VisualStylePickOutcome::kFailed;
           }
         }
@@ -5503,7 +5537,8 @@ private:
 
   bool execute_explicit_lift(
     const std::shared_ptr<GoalHandleExecuteTask> & goal_handle,
-    std::string & error_message)
+    std::string & error_message,
+    const std::optional<XYZ> & escape_approach_direction = std::nullopt)
   {
     if (goal_handle->is_canceling()) {
       error_message = "Task canceled";
@@ -5546,26 +5581,85 @@ private:
       trajectory_message,
       false,
       &error_code);
+    const bool vertical_path_complete =
+      is_complete_cartesian_path_fraction(achieved_fraction) &&
+      error_code.val == moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
+    const bool must_use_escape_fallback =
+      parameters_.vision_target.postgrasp_escape_enabled && escape_approach_direction.has_value();
     const double achieved_lift_distance = achieved_fraction * lift_distance;
-    if (achieved_fraction < 0.99) {
+    if (!vertical_path_complete) {
       const double required_lift_distance =
         std::max(parameters_.lift_min_distance, 0.0);
-      if (achieved_lift_distance + 1e-6 < required_lift_distance) {
-        error_message =
-          "Explicit lift Cartesian path only achieved fraction " +
-          std::to_string(achieved_fraction) +
-          " (distance " + std::to_string(achieved_lift_distance) +
-          " m, required at least " + std::to_string(required_lift_distance) + " m)";
+      const std::string vertical_error =
+        "Explicit lift Cartesian path is incomplete (fraction " +
+        std::to_string(achieved_fraction) + ", MoveIt error code " +
+        std::to_string(error_code.val) + ", distance " +
+        std::to_string(achieved_lift_distance) + " m, required at least " +
+        std::to_string(required_lift_distance) + " m)";
+      if (!must_use_escape_fallback &&
+        achieved_lift_distance + 1e-6 >= required_lift_distance)
+      {
+        RCLCPP_WARN(
+          get_logger(),
+          "Explicit lift Cartesian path is incomplete (fraction %.6f, MoveIt error code %d), but "
+          "that still yields %.4f m "
+          "which meets the required minimum %.4f m. Executing the partial lift.",
+          achieved_fraction,
+          error_code.val,
+          achieved_lift_distance,
+          required_lift_distance);
+      } else if (!must_use_escape_fallback) {
+        error_message = vertical_error;
         return false;
-      }
+      } else {
+        const auto escape_pose = make_planning_frame_postgrasp_escape_pose(
+          current_pose,
+          *escape_approach_direction,
+          parameters_.vision_target.postgrasp_escape_retreat_distance,
+          lift_distance);
+        if (!escape_pose) {
+          error_message = vertical_error + "; postgrasp escape target is invalid; vertical trajectory was not executed";
+          return false;
+        }
 
-      RCLCPP_WARN(
-        get_logger(),
-        "Explicit lift Cartesian path only achieved fraction %.6f, but that still yields %.4f m "
-        "which meets the required minimum %.4f m. Executing the partial lift.",
-        achieved_fraction,
-        achieved_lift_distance,
-        required_lift_distance);
+        moveit_msgs::msg::RobotTrajectory escape_trajectory_message;
+        moveit_msgs::msg::MoveItErrorCodes escape_error_code;
+        const double escape_fraction = arm_move_group_->computeCartesianPath(
+          std::vector<geometry_msgs::msg::Pose>{escape_pose->pose},
+          std::max(parameters_.cartesian_step_size, 0.001),
+          parameters_.cartesian_jump_threshold,
+          escape_trajectory_message,
+          parameters_.vision_target.postgrasp_escape_avoid_collisions,
+          &escape_error_code);
+        const double retreat_distance = parameters_.vision_target.postgrasp_escape_retreat_distance;
+        RCLCPP_INFO(
+          get_logger(),
+          "Postgrasp escape fallback offset=(%.4f, %.4f, %.4f), fraction=%.6f, error_code=%d, avoid_collisions=%s; vertical trajectory was not executed",
+          escape_pose->pose.position.x - current_pose.pose.position.x,
+          escape_pose->pose.position.y - current_pose.pose.position.y,
+          escape_pose->pose.position.z - current_pose.pose.position.z,
+          escape_fraction,
+          escape_error_code.val,
+          parameters_.vision_target.postgrasp_escape_avoid_collisions ? "true" : "false");
+        if (!is_complete_cartesian_path_fraction(escape_fraction) ||
+          escape_error_code.val != moveit_msgs::msg::MoveItErrorCodes::SUCCESS)
+        {
+          error_message = vertical_error + "; postgrasp escape Cartesian path is incomplete (fraction " +
+            std::to_string(escape_fraction) + ", MoveIt error code " +
+            std::to_string(escape_error_code.val) + ", retreat " +
+            std::to_string(retreat_distance) + " m, avoid_collisions=" +
+            (parameters_.vision_target.postgrasp_escape_avoid_collisions ? "true" : "false") +
+            "); vertical trajectory was not executed";
+          return false;
+        }
+
+        trajectory_message = std::move(escape_trajectory_message);
+        RCLCPP_WARN(
+          get_logger(),
+          "Explicit vertical lift is incomplete (fraction %.6f, MoveIt error code %d); executing full postgrasp escape fallback. Vertical trajectory was not executed.",
+          achieved_fraction,
+          error_code.val);
+      }
     }
 
     robot_trajectory::RobotTrajectory lift_trajectory(

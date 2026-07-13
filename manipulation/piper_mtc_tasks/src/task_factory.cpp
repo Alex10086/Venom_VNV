@@ -243,6 +243,9 @@ void declare_task_parameters(rclcpp::Node & node)
   node.declare_parameter<double>("vision_target.wait_after_home_timeout_sec", 2.0);
   node.declare_parameter<double>("vision_target.min_target_confidence", 0.7);
   node.declare_parameter<double>("vision_target.pregrasp_distance", 0.07);
+  node.declare_parameter<bool>("vision_target.postgrasp_escape_enabled", true);
+  node.declare_parameter<double>("vision_target.postgrasp_escape_retreat_distance", 0.05);
+  node.declare_parameter<bool>("vision_target.postgrasp_escape_avoid_collisions", true);
   node.declare_parameter<double>("vision_target.grasp_clearance", 0.01);
   node.declare_parameter<double>("vision_target.grasp_z_offset", 0.0);
   node.declare_parameter<double>("vision_target.collision_scale_xy", 0.85);
@@ -602,6 +605,12 @@ TaskParameters load_task_parameters(rclcpp::Node & node)
     node.get_parameter("vision_target.min_target_confidence").as_double();
   parameters.vision_target.pregrasp_distance =
     node.get_parameter("vision_target.pregrasp_distance").as_double();
+  parameters.vision_target.postgrasp_escape_enabled =
+    node.get_parameter("vision_target.postgrasp_escape_enabled").as_bool();
+  parameters.vision_target.postgrasp_escape_retreat_distance =
+    node.get_parameter("vision_target.postgrasp_escape_retreat_distance").as_double();
+  parameters.vision_target.postgrasp_escape_avoid_collisions =
+    node.get_parameter("vision_target.postgrasp_escape_avoid_collisions").as_bool();
   parameters.vision_target.grasp_clearance =
     node.get_parameter("vision_target.grasp_clearance").as_double();
   parameters.vision_target.grasp_z_offset =

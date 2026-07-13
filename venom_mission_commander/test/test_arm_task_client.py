@@ -30,6 +30,7 @@ VENOM_VNV_DIR = PACKAGE_DIR.parent
 CRAIC_ARM_MISSION_PATH = PACKAGE_DIR / 'config' / 'competition_10x6_arm_mission.yaml'
 VERIFY_POINT1_GRASP_MISSION_PATH = PACKAGE_DIR / 'config' / 'verify_point1_grasp.yaml'
 VERIFY_POINT3_FLAME_MISSION_PATH = PACKAGE_DIR / 'config' / 'verify_point3_flame_tracking.yaml'
+VERIFY_POINT4_CLASSIFY_PLACE_MISSION_PATH = PACKAGE_DIR / 'config' / 'verify_point4_classify_place.yaml'
 FLAME_DETECTION_ARRAY_TOPIC = '/perception/flame/detections_2d_array'
 DUAL_TARGET_PAYLOAD_TASK = 'REPEAT_VISUAL_PICK_TO_PAYLOAD'
 
@@ -1552,6 +1553,32 @@ def test_verify_point1_grasp_uses_dual_target_payload_action():
     grasp_task = task_named(mission, 'grasp_item_at_point_1')
 
     assert_dual_target_payload_grasp_task(grasp_task)
+
+
+def test_verify_point4_classify_place_matches_craic_arm_mission():
+    mission = load_yaml(VERIFY_POINT4_CLASSIFY_PLACE_MISSION_PATH)
+    craic_arm_mission = load_yaml(CRAIC_ARM_MISSION_PATH)
+
+    assert len(mission['waypoints']) == 1
+    verify_waypoint = mission['waypoints'][0]
+    task_point_4_classify_place = waypoint_named(
+        craic_arm_mission,
+        'task_point_4_classify_place',
+    )
+
+    assert verify_waypoint['x'] == task_point_4_classify_place['x']
+    assert verify_waypoint['y'] == task_point_4_classify_place['y']
+    assert verify_waypoint['yaw'] == task_point_4_classify_place['yaw']
+    assert verify_waypoint['skip_navigation'] is True
+    assert verify_waypoint['kind'] == task_point_4_classify_place['kind']
+    assert verify_waypoint['frame_id'] == task_point_4_classify_place['frame_id']
+    assert verify_waypoint['tasks'] == task_point_4_classify_place['tasks']
+
+    classify_task = task_named(mission, 'classify_and_place_object')
+
+    assert classify_task['type'] == 'classify_place'
+    assert classify_task['backend'] == 'action'
+    assert classify_task['task_type_name'] == 'CLASSIFY_PLATFORM_TO_COLOR_BOXES'
 
 
 def test_verify_point3_flame_tracking_uses_flame_pipeline_topic():

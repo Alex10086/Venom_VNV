@@ -98,6 +98,9 @@ pick_place_server:
       compute_grasp_offsets: true
       lock_lateral_offsets_to_zero: true
       pregrasp_distance: 0.07
+      postgrasp_escape_enabled: true
+      postgrasp_escape_retreat_distance: 0.05
+      postgrasp_escape_avoid_collisions: true
       grasp_clearance: 0.01
       grasp_z_offset: 0.045
       grasp_strategy: radial_side

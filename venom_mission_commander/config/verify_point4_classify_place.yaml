@@ -8,22 +8,31 @@
 mission:
   id: verify_point4_classify_place
   loop: false
-  stop_on_task_failure: true
+  stop_on_task_failure: false
+  nav_timeout_sec: 350.0
+  retry_count: 1
 
 waypoints:
   - name: verify_point4_classify_place_station
-    description: 跳过导航，只验证四号作业点分类投放 action 链路。
-    frame_id: map
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    skip_navigation: true
+    description: 使用总任务四号作业点配置，默认跳过导航验证分类投放链路。
     kind: operation_stop
+    frame_id: map
+    x: -0.279
+    y: -4.543
+    yaw: 1.57
+    skip_navigation: true
     tasks:
-      - name: wait_for_arm_and_object
-        type: wait
-        seconds: 1.0
-
+      - name: restore_teb_after_point_4_approach
+        type: ros_parameters
+        mode: restore
+        restore_snapshot_key: point4_teb_defaults
+      - name: enable_classification_yolo_for_point_4
+        type: perception_control
+        service_name: /classification_yolo_detector/set_enabled
+        mode: start
+        timeout_sec: 8.0
+        service_wait_timeout_sec: 3.0
+        settle_sec: 0.5
       - name: classify_and_place_object
         type: classify_place
         backend: action
@@ -34,3 +43,10 @@ waypoints:
         retry_count: 1
         retry_backoff_sec: 0.5
         output_key: last_placement
+      - name: disable_classification_yolo_after_point_4
+        type: perception_control
+        service_name: /classification_yolo_detector/set_enabled
+        mode: stop
+        timeout_sec: 5.0
+        service_wait_timeout_sec: 2.0
+        settle_sec: 0.2

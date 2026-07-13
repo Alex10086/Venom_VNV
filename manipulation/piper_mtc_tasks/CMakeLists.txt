@@ -44,6 +44,17 @@ set(common_dependencies
   venom_manipulation_interfaces
 )
 
+add_library(${PROJECT_NAME}_geometry
+  src/pregrasp_geometry.cpp
+)
+target_include_directories(${PROJECT_NAME}_geometry PUBLIC
+  include
+)
+ament_target_dependencies(${PROJECT_NAME}_geometry
+  geometry_msgs
+  rclcpp
+)
+
 if(linkattacher_msgs_FOUND)
   list(APPEND common_dependencies linkattacher_msgs)
 endif()
@@ -76,6 +87,7 @@ if(moveit_task_constructor_core_FOUND AND moveit_task_constructor_msgs_FOUND)
   )
   target_link_libraries(pick_place_server
     ${PROJECT_NAME}_core
+    ${PROJECT_NAME}_geometry
   )
   ament_target_dependencies(pick_place_server
     ${common_dependencies}
@@ -145,9 +157,28 @@ else()
   )
 endif()
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_pregrasp_pose
+    test/test_pregrasp_pose.cpp
+  )
+  target_include_directories(test_pregrasp_pose PRIVATE
+    include
+  )
+  target_link_libraries(test_pregrasp_pose
+    ${PROJECT_NAME}_geometry
+  )
+  ament_target_dependencies(test_pregrasp_pose
+    geometry_msgs
+    rclcpp
+  )
+endif()
+
 install(
-  TARGETS ${runtime_targets}
+  TARGETS ${PROJECT_NAME}_geometry ${runtime_targets}
   RUNTIME DESTINATION lib/${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
 )
 
 install(
