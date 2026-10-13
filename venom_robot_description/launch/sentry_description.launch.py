@@ -3,12 +3,13 @@ import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
-def generate_launch_description():
-    pkg_share = get_package_share_directory('venom_robot_description')
-    config_file = os.path.join(pkg_share, 'config', 'sentry.yaml')
+def _publish_transforms(context):
+    config_file = LaunchConfiguration('config_file').perform(context)
 
     with open(config_file, 'r') as f:
         config = yaml.safe_load(f)
@@ -39,4 +40,16 @@ def generate_launch_description():
             )
         )
 
-    return LaunchDescription(nodes)
+    return nodes
+
+
+def generate_launch_description():
+    pkg_share = get_package_share_directory('venom_robot_description')
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            'config_file',
+            default_value=os.path.join(pkg_share, 'config', 'sentry.yaml'),
+            description='Robot YAML containing the transforms list.',
+        ),
+        OpaqueFunction(function=_publish_transforms),
+    ])

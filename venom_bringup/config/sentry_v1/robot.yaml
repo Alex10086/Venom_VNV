@@ -1,0 +1,41 @@
+# Plain YAML read by launch, not a ROS parameter file.
+# Mounting is unknown: do not publish a fabricated base_link -> laser_link TF.
+# Bench convention only: Point-LIO's body is called base_link. Before driving,
+# configure the real IMU/body-to-chassis relationship and measured footprint.
+transforms: []
+
+lidar:
+  xfer_format: 1
+  multi_topic: 0
+  data_src: 0
+  publish_freq: 10.0
+  output_data_type: 0
+  frame_id: laser_link
+
+scan:
+  target_frame: base_link
+  transform_tolerance: 0.2
+  # Bench slice in base_link, to be set from measured mounting/obstacle heights.
+  min_height: 0.05
+  max_height: 1.0
+  angle_min: -3.141592653589793
+  angle_max: 3.141592653589793
+  angle_increment: 0.017453292519943295
+  scan_time: 0.1
+  range_min: 0.3
+  range_max: 10.0
+  use_inf: true
+  inf_epsilon: 1.0
+
+serial:
+  # Device is selected by the port_name launch argument.
+  baud_rate: 921600
+  timeout: 0.1
+  loop_rate: 50
+  cmd_vel_topic: /cmd_vel
+  auto_aim_topic: /auto_aim
+  venom_cmd_topic: /venom_cmd
+  robot_status_topic: /robot_status
+  game_status_topic: /game_status
+  # Keep disabled until command expiry and C-board stop behavior are verified.
+  heartbeat_rate: 0.0

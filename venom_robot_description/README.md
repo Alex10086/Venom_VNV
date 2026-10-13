@@ -23,6 +23,16 @@ ros2 launch venom_robot_description scout_mini_description.launch.py
 ros2 launch venom_robot_description infantry_description.launch.py
 ```
 
+哨兵静态 TF 可指定外部配置，默认仍读取包内 `config/sentry.yaml`：
+
+```bash
+ros2 launch venom_robot_description sentry_description.launch.py \
+  config_file:=/absolute/path/to/robot.yaml
+```
+
+配置沿用下面的 `transforms` 列表格式。`transforms: []` 表示不发布静态 TF，
+适用于安装位置尚未测量的联调阶段；本入口不发布 `odom -> base_link`。
+
 ### 验证
 ```bash
 # 查看 TF 变换
