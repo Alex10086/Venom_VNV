@@ -1,16 +1,8 @@
-# Static TF configuration for Scout Mini robot
+# Static TF configuration for Scout Mini robot with tilted Livox MID-360
+# Note: map->odom is dynamically published by slam_toolbox with scan matching and loop closure.
 transforms:
-  # - parent_frame: base_link
-  #   child_frame: laser_link
-  #   translation: [0.0, 0.0, 0.36]
-  #   rotation: [0.0, 0.0, 0.0]
-  # # livox_frame is the hardcoded IMU frame_id in the Livox driver (lddc.cpp),
-  # # co-located with laser_link (same physical unit, no offset).
-  # - parent_frame: laser_link
-  #   child_frame: livox_frame
-  #   translation: [0.0, 0.0, 0.0]
-  #   rotation: [0.0, 0.0, 0.0]
-  - parent_frame: map
-    child_frame: odom
-    translation: [0.0, 0.0, 0.0]
-    rotation: [0.0, 0.0, 0.0]
+  # Leveling transform: body (tilted Mid-360) to base_link (level chassis ground contact)
+  - parent_frame: body
+    child_frame: base_link
+    translation: [0.0, 0.0, -0.34]
+    rotation: [0.0, -0.9352, 0.0]

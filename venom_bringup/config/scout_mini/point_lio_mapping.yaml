@@ -1,6 +1,6 @@
 /**:
     ros__parameters:
-        use_imu_as_input: False                             # Change to True to use IMU as input of Point-LIO
+        use_imu_as_input: False                            # Original Point-LIO IMU observation mode
         prop_at_freq_of_imu: True
         check_satu: True
         init_map_size: 10
@@ -50,7 +50,7 @@
             acc_cov_input: 0.1
             plane_thr: 0.1
             match_s: 81.0
-            ivox_grid_resolution: 2.0
+            ivox_grid_resolution: 0.5
             gravity: [ 0.0, 0.0, -9.810 ]
             gravity_init: [ 0.0, 0.0, -9.810 ]
             # LiDAR-to-IMU extrinsic for MID360 mounted on Scout Mini
@@ -61,13 +61,13 @@
 
         odometry:
             publish_odometry_without_downsample: False
-            enable_2d_mode: True
+            enable_2d_mode: False                          # Preserve tilted IMU pose in both points and TF
 
         publish:
             path_en: True
             scan_publish_en: True
             scan_bodyframe_pub_en: False
-            tf_send_en: True                                # publish odom -> base_link TF
+            tf_send_en: True                               # odom -> body; mounting TF provides body -> base_link
 
         pcd_save:
             pcd_save_en: False                               # save PCD for relocalization map

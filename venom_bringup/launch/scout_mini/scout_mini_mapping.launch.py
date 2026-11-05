@@ -69,7 +69,7 @@ def generate_launch_description():
             {'data_src': 0},
             {'publish_freq': 10.0},
             {'output_data_type': 0},
-            {'frame_id': 'base_link'},
+            {'frame_id': 'body'},
             {'lvx_file_path': '/home/livox/livox_test.lvx'},
             {'user_config_path': livox_config_path},
             {'cmdline_input_bd_code': '47MDLAS0020103'},
@@ -110,7 +110,7 @@ def generate_launch_description():
         executable='pointlio_mapping',
         name='point_lio',
         output='screen',
-        parameters=[point_lio_config],
+        parameters=[point_lio_config, {'frame.base_frame_id': 'body', 'frame.odom_frame_id': 'odom'}],
         remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static')],
     )
 
@@ -125,7 +125,7 @@ def generate_launch_description():
             'target_frame': 'base_link',
             'transform_tolerance': 0.2,
             'min_height': 0.05,
-            'max_height': 0.7,
+            'max_height': 0.60,
             'angle_min': -3.14159,
             'angle_max': 3.14159,
             'angle_increment': 0.001,

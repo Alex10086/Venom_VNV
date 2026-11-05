@@ -13,6 +13,47 @@
 - `relocalization_bringup.launch.py` - 重定位
 - `examples/px4_agent_probe.launch.py` - PX4 uXRCE-DDS 连通性探测与桥接状态检查
 
+## hyq Scout Mini 实机基线（ROS 2 Humble）
+
+斜装 MID360 的点云和 IMU 保持原始坐标，不在驱动层单独旋转点云。
+Point-LIO 使用 `use_imu_as_input: False`、`odometry.enable_2d_mode: False`，
+发布完整三维的 `odom -> body`；禁止将输出姿态单独压成 yaw。
+`body -> base_link` 只由一个安装外参节点发布，`map -> odom` 只由
+SLAM Toolbox 动态发布。当前安装外参是近似值，并非经过测量的完整机械标定。
+
+机载启动脚本由用户级 `scout-full-stack.service` 管理，停止时清理整棵
+launch 进程树（包括静态 TF）。不要与手动 ROS launch 同时启动：
+
+首次在 hyq 部署服务时，从仓库根目录执行（服务文件使用机载固定路径）：
+
+```bash
+install -m 755 venom_bringup/scripts/launch_full_stack.sh /home/hyq/launch_full_stack.sh
+mkdir -p /home/hyq/.config/systemd/user
+install -m 644 venom_bringup/scripts/scout-full-stack.service \
+  /home/hyq/.config/systemd/user/scout-full-stack.service
+systemctl --user daemon-reload
+```
+
+`small_gicp_relocalization` 子模块指向 Alex10086 fork，包含系统安装与
+FetchContent 构建目标名称兼容修复；请按主仓库记录的提交初始化子模块。
+
+```bash
+# CAN 未启动时先执行，sudo 按提示输入密码
+sudo ip link set can0 up type can bitrate 500000
+
+# 启动全栈与本地 RViz；重复执行不会新增一套进程
+/home/hyq/launch_full_stack.sh
+systemctl --user status scout-full-stack.service --no-pager
+
+# 完整停止，避免遗留 TF 发布者
+systemctl --user stop scout-full-stack.service
+```
+
+日志追加到 `/home/hyq/full_stack.log`。该服务不自动开机启动。
+静止下节点、TF 和频率检查通过不等于长走廊掉头验收通过；
+后续运动测试应同步记录原始雷达、IMU、轮式里程计、LIO 和 TF，
+避免同时切换滤波模式、网格参数与安装外参。
+
 ## 哨兵极简导航入口
 
 `launch/sentry/sentry_nav_v1.launch.py` 面向 ROS 2 Jazzy、全向轮底盘，

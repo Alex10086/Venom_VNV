@@ -1,0 +1,14 @@
+[Unit]
+Description=Scout Mini mapping, navigation and RViz
+
+[Service]
+Type=simple
+Environment=SCOUT_FULL_STACK_MANAGED=1
+ExecStart=/home/hyq/launch_full_stack.sh
+KillMode=control-group
+KillSignal=SIGINT
+TimeoutStopSec=20
+SendSIGKILL=yes
+Restart=no
+StandardOutput=append:/home/hyq/full_stack.log
+StandardError=append:/home/hyq/full_stack.log
