@@ -1,0 +1,13 @@
+diff --git a/src/tare_planner/CMakeLists.txt b/src/tare_planner/CMakeLists.txt
+index 6867b6e..fe592fc 100644
+--- a/src/tare_planner/CMakeLists.txt
++++ b/src/tare_planner/CMakeLists.txt
+@@ -154,3 +154,8 @@ install(DIRECTORY data/
+ ament_package()
+ 
+ 
++
++# Venom: ship the pinned OR-Tools runtime with a relative loader path.
++set_target_properties(tare_planner_node PROPERTIES INSTALL_RPATH "$ORIGIN/ortools")
++install(DIRECTORY or-tools/lib/ DESTINATION lib/${PROJECT_NAME}/ortools
++  FILES_MATCHING PATTERN "libortools.so*")

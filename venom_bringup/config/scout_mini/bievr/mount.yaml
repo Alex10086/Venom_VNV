@@ -1,0 +1,25 @@
+# Measured 2026-11-09 on level ground. Body is the MID360 IMU origin.
+# Roll/pitch: static IMU plus 13k floor-plane inliers (4.6 mm residual).
+# Heading verified by a 0.96 m operator-controlled straight run.
+vehicle:
+  length: 0.60
+  width: 0.57
+  footprint_padding: 0.03
+  ground_clearance_filter: 0.06
+  obstacle_height_max: 0.65
+measurement:
+  lidar_center_from_vehicle_center: [0.35, 0.0, 0.26]
+  floor_fit_imu_height: 0.22160769010198197
+  yaw_verified_by_motion: true
+  heading_test_wheel_distance: 0.9584166760803607
+  heading_test_lio_distance: 0.9716749802472434
+  heading_correction_degrees: -4.908023291365822
+transforms:
+  - parent_frame: body
+    child_frame: base_link
+    translation: [0.05553974987054674, -0.03103078127302146, -0.38091367777414165]
+    rotation: [-0.027135662469823924, -1.1057170096090987, -0.014266525020321866]
+  - parent_frame: base_link
+    child_frame: scan_link
+    translation: [0.35, 0.0, 0.250282011438626]
+    rotation: [0.0, 0.0, 0.0]

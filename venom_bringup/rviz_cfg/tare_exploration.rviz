@@ -1,0 +1,97 @@
+Panels:
+- Class: rviz_common/Displays
+  Name: Displays
+Visualization Manager:
+  Class: ''
+  Global Options:
+    Fixed Frame: map
+    Background Color: 35; 35; 35
+    Frame Rate: 15
+  Displays:
+  - Class: rviz_default_plugins/Grid
+    Name: Grid
+    Enabled: true
+    Cell Size: 1.0
+  - Class: rviz_default_plugins/TF
+    Name: TF
+    Enabled: true
+    Show Names: false
+  - Class: rviz_default_plugins/PointCloud2
+    Name: Registered scan
+    Enabled: true
+    Topic:
+      Value: /tare/registered_scan
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Depth: 2
+    Size (m): 0.04
+    Style: Points
+    Color Transformer: FlatColor
+    Color: 180; 210; 230
+    Position Transformer: XYZ
+    Queue Size: 2
+  - Class: rviz_default_plugins/PointCloud2
+    Name: Terrain height
+    Enabled: true
+    Topic:
+      Value: /tare/terrain_map
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Depth: 2
+    Size (m): 0.04
+    Style: Points
+    Color Transformer: Intensity
+    Color: 180; 210; 230
+    Position Transformer: XYZ
+    Queue Size: 2
+  - Class: rviz_default_plugins/Path
+    Name: TARE global
+    Enabled: true
+    Topic:
+      Value: /tare/global_path
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Depth: 2
+    Line Style: Lines
+    Line Width: 0.04
+    Color: 255; 170; 40
+    Buffer Length: 1
+  - Class: rviz_default_plugins/Path
+    Name: TARE local tour
+    Enabled: true
+    Topic:
+      Value: /tare/local_path
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Depth: 2
+    Line Style: Lines
+    Line Width: 0.04
+    Color: 80; 255; 80
+    Buffer Length: 1
+  - Class: rviz_default_plugins/Path
+    Name: Collision free path
+    Enabled: true
+    Topic:
+      Value: /tare/path
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Depth: 2
+    Line Style: Lines
+    Line Width: 0.04
+    Color: 80; 170; 255
+    Buffer Length: 1
+  Tools:
+  - Class: rviz_default_plugins/Interact
+  - Class: rviz_default_plugins/MoveCamera
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 15.0
+      Pitch: 0.8
+      Yaw: 0.8
+      Target Frame: base_link

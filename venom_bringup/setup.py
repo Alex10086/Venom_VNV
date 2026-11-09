@@ -59,6 +59,10 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'bievr_scan_filter = venom_bringup.bievr_scan_filter:main',
+            'tare_lio_adapter = venom_bringup.tare_lio_adapter:main',
+            'tare_command_gate = venom_bringup.tare_command_gate:main',
+            'bievr_map_recorder = venom_bringup.bievr_map_recorder:main',
             'multi_waypoint_commander = '
             'venom_bringup.multi_waypoint_commander:main',
         ],

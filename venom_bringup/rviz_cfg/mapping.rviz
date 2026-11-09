@@ -1,4 +1,6 @@
 Panels:
+  - Class: nav2_rviz_plugins/Navigation 2
+    Name: Navigation 2
   - Class: rviz_common/Displays
     Help Height: 78
     Name: Displays
@@ -360,7 +362,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /initialpose
-    - Class: rviz_default_plugins/SetGoal
+    - Class: nav2_rviz_plugins/GoalTool
       Topic:
         Depth: 5
         Durability Policy: Volatile

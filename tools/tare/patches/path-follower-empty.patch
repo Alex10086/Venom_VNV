@@ -1,0 +1,14 @@
+diff --git a/src/local_planner/src/pathFollower.cpp b/src/local_planner/src/pathFollower.cpp
+index cf36baa..60e94a9 100644
+--- a/src/local_planner/src/pathFollower.cpp
++++ b/src/local_planner/src/pathFollower.cpp
+@@ -143,7 +143,8 @@ void pathHandler(const nav_msgs::msg::Path::ConstSharedPtr pathIn)
+   vehicleYawRec = vehicleYaw;
+ 
+   pathPointID = 0;
+-  pathInit = true;
++  pathInit = !path.poses.empty();
++  if (!pathInit) { vehicleSpeed = 0; vehicleYawRate = 0; }
+ }
+ 
+ void joystickHandler(const sensor_msgs::msg::Joy::ConstSharedPtr joy)

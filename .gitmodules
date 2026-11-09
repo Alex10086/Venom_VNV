@@ -43,3 +43,14 @@
 [submodule "simulation/venom_nav_simulation"]
 	path = simulation/venom_nav_simulation
 	url = git@github.com:Venom-Algorithm/venom_nav_simulation.git
+[submodule "localization/lio/BIEVR-LIO"]
+	path = localization/lio/BIEVR-LIO
+	url = https://github.com/ethz-asl/BIEVR-LIO.git
+[submodule "exploration/tare_planner"]
+	path = exploration/tare_planner
+	url = https://github.com/caochao39/tare_planner.git
+	branch = humble-jazzy
+[submodule "exploration/autonomous_exploration_development_environment"]
+	path = exploration/autonomous_exploration_development_environment
+	url = https://github.com/HongbiaoZ/autonomous_exploration_development_environment.git
+	branch = humble
